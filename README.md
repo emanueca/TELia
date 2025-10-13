@@ -17,9 +17,33 @@ Diferente de outras plataformas, o Telegram permite a criação de bots de forma
 
 ### 🚀 Como Começar
 
-Para construir sua própria versão do TELia, siga nosso guia passo a passo. É mais fácil do que você imagina!
+Para construir sua própria versão do TELia do zero, siga nosso guia passo a passo. É mais fácil do que você imagina!
 
-➡️ **[TUTORIAL DE INSTALAÇÃO](./STEP.md)**
+➡️ **[TUTORIAL COMPLETO](./STEP.md)**
+
+---
+
+### ▶️ Inicializando o Servidor (Guia Rápido) &nbsp; [<sub>(não está entendendo nada? clique aqui)</sub>](./STEP.md)
+
+Estes são os comandos para ligar o bot, depois que você já o configurou uma vez. Você precisará de **dois terminais do PowerShell** abertos.
+
+**1. No primeiro terminal (para o Ngrok):**
+   * Este comando cria o túnel seguro para a internet.
+   ```powershell
+   ngrok http 5678
+   ```
+   * Copie a URL `https://...` que aparecer na linha `Forwarding`.
+
+**2. No segundo terminal (para o n8n):**
+   * Primeiro, configure a URL do Ngrok que você acabou de copiar. Lembre-se das aspas e da barra `/` no final.
+   ```powershell
+   $env:WEBHOOK_URL="https://SUA_URL_DO_NGROK_AQUI/"
+   ```
+   * Depois, inicie o n8n.
+   ```powershell
+   n8n
+   ```
+Pronto! Com esses dois terminais rodando, seu bot está online e pronto para responder.
 
 ---
 
