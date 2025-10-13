@@ -77,3 +77,10 @@ Toda vez que for ligar seu bot, siga esta sequência:
         export WEBHOOK_URL=https://SUA_URL_DO_NGROK_AQUI/ && n8n
         ```
 4.  Seu ambiente agora está online e pronto para receber mensagens!
+   ---
+
+### ✅ Próximo Passo
+
+Ambiente configurado! Agora vamos para a parte divertida.
+
+➡️ **[Parte 2: Criar o Bot e o Workflow](./WORKFLOW.md)**
