@@ -1,0 +1,124 @@
+{
+  "name": "TELia",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "c166a597-fa95-412a-8724-6a39c8ef556d",
+      "name": "Telegram Trigger",
+      "webhookId": "34c37a0f-5cf6-4f57-8ac6-8c048b5dd49d",
+      "credentials": {
+        "telegramApi": {
+          "id": "6K2vjQSyUi9QsTWy",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-pro",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-pro"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Você é a TELia, uma assistente prestativa desenvolvida pelo Emanuel. Você está atualmente em fase de desenvolvimento.\n\nSe for a primeira mensagem do usuário ou se ele disser \"olá\", \"oi\" ou algo parecido, apresente-se brevemente antes de responder. Para as demais perguntas, responda diretamente de forma concisa e amigável.\n\nUsuário: {{ $json.message.text }}\nTELia:"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        208,
+        0
+      ],
+      "id": "7b43a0c9-a30d-4d85-bec4-828aa4dd879b",
+      "name": "Message a model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "obfSHfgHv8452x4p",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.content.parts[0].text }}",
+        "replyMarkup": "=none",
+        "forceReply": {},
+        "replyKeyboardOptions": {},
+        "replyKeyboardRemove": {},
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        560,
+        0
+      ],
+      "id": "3c136877-4567-4a4f-bce0-8f919827265b",
+      "name": "Send a text message",
+      "webhookId": "9409915a-c3ef-4193-b428-b54f22542dbe",
+      "credentials": {
+        "telegramApi": {
+          "id": "6K2vjQSyUi9QsTWy",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "ccd684b9-0cff-4f42-955e-3d447801bfb0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b546373d31f9501da1711b3d22b5c00f5f7a2c501e2dd705e5098ce7c64339f9"
+  },
+  "id": "wugJcpghvEZL2pJr",
+  "tags": []
+}
