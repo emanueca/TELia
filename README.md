@@ -3,7 +3,7 @@
 ![GitHub repo size](https://img.shields.io/github/repo-size/emanueca/TELia?style=for-the-badge)
 ![GitHub last commit](https://img.shields.io/github/last-commit/emanueca/TELia?style=for-the-badge)
 
-### 💡 TELia
+### 💡 Crie sua versão
 
 Diferente de outras plataformas, o Telegram permite a criação de bots de forma instantânea e gratuita, sem a necessidade de comprar um chip de celular ou passar por processos de aprovação de API.
 
