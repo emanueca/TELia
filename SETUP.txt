@@ -1,0 +1,136 @@
+========================================================
+  TELia — Comandos de instalação e execução no servidor
+========================================================
+
+------------------------------------------------------------
+1. ATUALIZAR O SISTEMA
+------------------------------------------------------------
+sudo apt update && sudo apt upgrade -y
+
+
+------------------------------------------------------------
+2. INSTALAR O PYTHON (caso não tenha)
+------------------------------------------------------------
+sudo apt install python3 python3-pip python3-venv -y
+
+
+------------------------------------------------------------
+3. INSTALAR O MYSQL (caso não tenha)
+------------------------------------------------------------
+sudo apt install mysql-server -y
+sudo systemctl start mysql
+sudo systemctl enable mysql
+
+
+------------------------------------------------------------
+4. CONFIGURAR O MYSQL
+------------------------------------------------------------
+sudo mysql -u root -p
+
+-- Dentro do console do MySQL, rode:
+CREATE DATABASE telia_db;
+CREATE USER 'telia_user'@'localhost' IDENTIFIED BY 'sua_senha_aqui';
+GRANT ALL PRIVILEGES ON telia_db.* TO 'telia_user'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+
+
+------------------------------------------------------------
+5. CLONAR O PROJETO DO GITHUB
+------------------------------------------------------------
+git clone https://github.com/emanueca/TELia.git
+cd TELia
+
+
+------------------------------------------------------------
+6. CRIAR O AMBIENTE VIRTUAL PYTHON
+------------------------------------------------------------
+python3 -m venv .venv
+source .venv/bin/activate
+
+
+------------------------------------------------------------
+7. INSTALAR AS DEPENDÊNCIAS
+------------------------------------------------------------
+pip install -r requirements.txt
+
+
+------------------------------------------------------------
+8. CONFIGURAR O ARQUIVO .env
+------------------------------------------------------------
+nano .env
+
+-- Cole isso dentro do arquivo e preencha com seus dados:
+
+TELEGRAM_BOT_TOKEN=seu_token_aqui
+GEMINI_API_KEY=sua_chave_aqui
+MYSQL_HOST=localhost
+MYSQL_USER=telia_user
+MYSQL_PASSWORD=sua_senha_aqui
+MYSQL_DATABASE=telia_db
+
+-- Salvar: CTRL+O  →  Enter  →  CTRL+X
+
+
+------------------------------------------------------------
+9. RODAR O BOT (teste simples)
+------------------------------------------------------------
+python main.py
+
+-- Se aparecer "Application started", está funcionando!
+-- Para parar: CTRL+C
+
+
+------------------------------------------------------------
+10. RODAR O BOT EM SEGUNDO PLANO (para ficar ligado 24/7)
+------------------------------------------------------------
+nohup python main.py > telia.log 2>&1 &
+
+-- Para ver os logs em tempo real:
+tail -f telia.log
+
+-- Para ver o processo rodando:
+ps aux | grep main.py
+
+-- Para parar o bot:
+kill $(ps aux | grep 'main.py' | grep -v grep | awk '{print $2}')
+
+
+------------------------------------------------------------
+11. (OPCIONAL) RODAR COMO SERVIÇO DO SISTEMA (mais robusto)
+------------------------------------------------------------
+sudo nano /etc/systemd/system/telia.service
+
+-- Cole isso dentro (ajuste o caminho se necessário):
+
+[Unit]
+Description=TELia Bot
+After=network.target
+
+[Service]
+User=seu_usuario_linux
+WorkingDirectory=/home/seu_usuario_linux/TELia
+ExecStart=/home/seu_usuario_linux/TELia/.venv/bin/python main.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+-- Salvar: CTRL+O  →  Enter  →  CTRL+X
+
+-- Ativar e iniciar o serviço:
+sudo systemctl daemon-reload
+sudo systemctl enable telia
+sudo systemctl start telia
+
+-- Ver status:
+sudo systemctl status telia
+
+-- Ver logs:
+sudo journalctl -u telia -f
+
+
+========================================================
+  PRONTO! O bot está no ar.
+========================================================
