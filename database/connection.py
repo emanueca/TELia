@@ -33,7 +33,7 @@ def _ensure_pending_index(cursor):
         FROM information_schema.statistics
         WHERE table_schema = DATABASE()
           AND table_name = 'reminders'
-          AND index_name = 'idx_pending_sent_remind_at'
+                    AND index_name = 'idx_pending_sent_remind_at'
         """
     )
     if cursor.fetchone()[0] == 0:
@@ -46,22 +46,23 @@ def init_db():
     cursor = conn.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usuarios (
+        CREATE TABLE IF NOT EXISTS users (
             chat_id BIGINT PRIMARY KEY,
             email   VARCHAR(255) UNIQUE NOT NULL,
-            senha_hash VARCHAR(255) NOT NULL,
-            logado  BOOLEAN DEFAULT FALSE
+            password_hash VARCHAR(255) NOT NULL,
+            is_logged_in BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS reminders (
             id         INT AUTO_INCREMENT PRIMARY KEY,
-            chat_id    BIGINT NOT NULL,
+            user_id    BIGINT NOT NULL,
             message    TEXT NOT NULL,
             remind_at  DATETIME NOT NULL,
             sent       BOOLEAN NOT NULL DEFAULT FALSE,
-            FOREIGN KEY (chat_id) REFERENCES usuarios(chat_id)
+            FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE
         )
     """)
 

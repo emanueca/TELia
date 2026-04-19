@@ -6,7 +6,19 @@ from database.connection import get_connection
 def get_usuario(chat_id: int) -> dict | None:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM usuarios WHERE chat_id = %s", (chat_id,))
+    cursor.execute(
+        """
+        SELECT
+            chat_id,
+            email,
+            password_hash AS senha_hash,
+            is_logged_in AS logado,
+            created_at
+        FROM users
+        WHERE chat_id = %s
+        """,
+        (chat_id,),
+    )
     usuario = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -17,9 +29,9 @@ def criar_usuario(chat_id: int, email: str, senha_hash: str):
     cursor = conn.cursor()
     cursor.execute(
         """
-        INSERT INTO usuarios (chat_id, email, senha_hash, logado)
+        INSERT INTO users (chat_id, email, password_hash, is_logged_in)
         VALUES (%s, %s, %s, TRUE)
-        ON DUPLICATE KEY UPDATE email = %s, senha_hash = %s, logado = TRUE
+        ON DUPLICATE KEY UPDATE email = %s, password_hash = %s, is_logged_in = TRUE
         """,
         (chat_id, email, senha_hash, email, senha_hash),
     )
@@ -31,7 +43,7 @@ def set_logado(chat_id: int, logado: bool):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE usuarios SET logado = %s WHERE chat_id = %s", (logado, chat_id)
+        "UPDATE users SET is_logged_in = %s WHERE chat_id = %s", (logado, chat_id)
     )
     conn.commit()
     cursor.close()
@@ -43,7 +55,7 @@ def save_reminder(chat_id: int, message: str, remind_at: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO reminders (chat_id, message, remind_at) VALUES (%s, %s, %s)",
+        "INSERT INTO reminders (user_id, message, remind_at) VALUES (%s, %s, %s)",
         (chat_id, message, remind_at),
     )
     conn.commit()
@@ -55,7 +67,17 @@ def get_pending_reminders() -> list[dict]:
     cursor = conn.cursor(dictionary=True)
     now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     cursor.execute(
-        "SELECT * FROM reminders WHERE sent = FALSE AND remind_at <= %s", (now,)
+        """
+        SELECT
+            id,
+            user_id AS chat_id,
+            message,
+            remind_at,
+            sent
+        FROM reminders
+        WHERE sent = FALSE AND remind_at <= %s
+        """,
+        (now,),
     )
     reminders = cursor.fetchall()
     cursor.close()

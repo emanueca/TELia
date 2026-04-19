@@ -23,26 +23,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usuario = get_usuario(chat_id)
     if not usuario or not usuario["logado"]:
         await update.message.reply_text(
-            "⚠️ Você precisa ter uma conta para usar a TELia.\n"
-            "Digite /cadastrar para criar uma conta ou /login para entrar."
+            "👋 Olá! Para eu salvar seus lembretes, você precisa estar logado.\n\n"
+            "👉 Digite /login para entrar ou /cadastrar para criar sua conta."
             + MSG_GITHUB
         )
         return
 
     # ── Lógica principal: extração de lembrete via IA ─────
+    mensagem_aguarde = await update.message.reply_text("Processando seu lembrete...")
     result = extract_reminder(text)
 
     if not result:
-        await update.message.reply_text(
+        await mensagem_aguarde.edit_text(
             "Não consegui identificar um lembrete. Tente algo como:\n"
-            "_'Me lembra de X amanhã às 10h'_",
+            "_'Me lembra de beber água amanhã às 10h'_",
             parse_mode="Markdown",
         )
         return
 
-    save_reminder(chat_id, result["message"], result["remind_at"])
-    await update.message.reply_text(
-        f"✅ Lembrete salvo! Vou te avisar sobre *{result['message']}* em `{result['remind_at']}`.",
+    try:
+        save_reminder(chat_id, result["message"], result["remind_at"])
+    except Exception:
+        await mensagem_aguarde.edit_text(
+            "⚠️ Não consegui salvar seu lembrete agora. "
+            "Use /login novamente e tente mais uma vez."
+        )
+        return
+
+    await mensagem_aguarde.edit_text(
+        f"✅ Lembrete salvo! Vou te avisar sobre *{result['message']}* em {result['remind_at']}.",
         parse_mode="Markdown",
     )
 
