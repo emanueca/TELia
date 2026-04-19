@@ -1,16 +1,45 @@
 import mysql.connector
+from mysql.connector import pooling
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
+_db_pool = None
+
+
+def _get_pool():
+    global _db_pool
+    if _db_pool is None:
+        _db_pool = pooling.MySQLConnectionPool(
+            pool_name="telia_pool",
+            pool_size=5,
+            pool_reset_session=True,
+            host=os.getenv("MYSQL_HOST"),
+            user=os.getenv("MYSQL_USER"),
+            password=os.getenv("MYSQL_PASSWORD"),
+            database=os.getenv("MYSQL_DATABASE"),
+        )
+    return _db_pool
+
 def get_connection():
-    return mysql.connector.connect(
-        host=os.getenv("MYSQL_HOST"),
-        user=os.getenv("MYSQL_USER"),
-        password=os.getenv("MYSQL_PASSWORD"),
-        database=os.getenv("MYSQL_DATABASE"),
+    return _get_pool().get_connection()
+
+
+def _ensure_pending_index(cursor):
+    cursor.execute(
+        """
+        SELECT COUNT(1)
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = 'reminders'
+          AND index_name = 'idx_pending_sent_remind_at'
+        """
     )
+    if cursor.fetchone()[0] == 0:
+        cursor.execute(
+            "CREATE INDEX idx_pending_sent_remind_at ON reminders (sent, remind_at)"
+        )
 
 def init_db():
     conn = get_connection()
@@ -35,6 +64,8 @@ def init_db():
             FOREIGN KEY (chat_id) REFERENCES usuarios(chat_id)
         )
     """)
+
+    _ensure_pending_index(cursor)
 
     conn.commit()
     cursor.close()

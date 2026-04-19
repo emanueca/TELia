@@ -12,7 +12,7 @@ def get_usuario(chat_id: int) -> dict | None:
     conn.close()
     return usuario
 
-def criar_usuario(chat_id: int, email: str, senha_hash: bytes):
+def criar_usuario(chat_id: int, email: str, senha_hash: str):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute(

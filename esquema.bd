@@ -1,0 +1,25 @@
+CREATE DATABASE IF NOT EXISTS telia_db;
+USE telia_db;
+
+-- Tabela de Usuários
+CREATE TABLE IF NOT EXISTS usuarios (
+	chat_id BIGINT PRIMARY KEY,
+	email VARCHAR(255) UNIQUE NOT NULL,
+	senha_hash VARCHAR(64) NOT NULL,
+	logado BOOLEAN DEFAULT FALSE,
+	criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabela de Lembretes
+CREATE TABLE IF NOT EXISTS lembretes (
+	id INT AUTO_INCREMENT PRIMARY KEY,
+	user_id BIGINT NOT NULL,
+	mensagem TEXT NOT NULL,
+	data_lembrete DATETIME NOT NULL,
+	enviado BOOLEAN DEFAULT FALSE,
+	FOREIGN KEY (user_id) REFERENCES usuarios(chat_id) ON DELETE CASCADE
+);
+
+-- O SEGREDO DA LEVEZA: Índices
+-- Isso faz o MySQL encontrar lembretes pendentes instantaneamente sem ler a tabela toda
+CREATE INDEX idx_filtro_envio ON lembretes (enviado, data_lembrete);

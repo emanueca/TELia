@@ -1,10 +1,14 @@
-import bcrypt
+import hashlib
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.commands import MSG_GITHUB
 from database.queries import get_usuario, criar_usuario, save_reminder
 from ai.gemini import extract_reminder
+
+
+def gerar_hash_senha(senha_plana: str) -> str:
+    return hashlib.sha256(senha_plana.encode("utf-8")).hexdigest()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
@@ -51,7 +55,7 @@ async def _processar_cadastro(update: Update, chat_id: int, text: str):
         if not email or not senha_plana:
             raise ValueError("campos vazios")
 
-        senha_hash = bcrypt.hashpw(senha_plana.encode("utf-8"), bcrypt.gensalt())
+        senha_hash = gerar_hash_senha(senha_plana)
         criar_usuario(chat_id, email, senha_hash)
 
         await update.message.reply_text(

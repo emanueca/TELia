@@ -1,22 +1,12 @@
 # TELia — Bot de Lembretes com IA
 
-Bot do Telegram que usa Gemini para extrair lembretes de mensagens em linguagem natural, com sistema de contas via MySQL.
+Bot do telegram, com foco de ser leve e um agente de lembretes. Crie sua conta nele para que ele consiga salvar suas informações!
 
-## Como rodar
+## Acesso
 
-```bash
-# 1. Instalar dependências
-pip install -r requirements.txt
+link telegram: 
 
-# 2. Criar o banco de dados no MySQL
-mysql -u root -p -e "CREATE DATABASE telia_db;"
 
-# 3. Preencher o .env com seus tokens e credenciais
-# (veja a seção abaixo)
-
-# 4. Iniciar o bot
-python main.py
-```
 
 ## Variáveis de ambiente (`.env`)
 
