@@ -1,23 +1,25 @@
-from .connection import get_connection
+from datetime import datetime
+from database.connection import get_connection
 
-def save_reminder(chat_id: int, message: str, remind_at: str) -> int:
+def save_reminder(chat_id: int, message: str, remind_at: str):
     conn = get_connection()
-    cursor = conn.execute(
+    conn.execute(
         "INSERT INTO reminders (chat_id, message, remind_at) VALUES (?, ?, ?)",
-        (chat_id, message, remind_at),
+        (chat_id, message, remind_at)
     )
     conn.commit()
-    reminder_id = cursor.lastrowid
     conn.close()
-    return reminder_id
 
 def get_pending_reminders():
     conn = get_connection()
-    rows = conn.execute(
-        "SELECT * FROM reminders WHERE sent = 0 AND remind_at <= datetime('now')"
-    ).fetchall()
+    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+    cursor = conn.execute(
+        "SELECT * FROM reminders WHERE sent = 0 AND remind_at <= ?",
+        (now,)
+    )
+    reminders = [dict(row) for row in cursor.fetchall()]
     conn.close()
-    return rows
+    return reminders
 
 def mark_as_sent(reminder_id: int):
     conn = get_connection()

@@ -31,6 +31,15 @@ def extract_reminder(user_message: str) -> dict | None:
     response = _model.generate_content(prompt)
     raw = response.text.strip()
 
+    if raw.startswith("```json"):
+        raw = raw.replace("```json", "", 1)
+    if raw.startswith("```"):
+        raw = raw.replace("```", "", 1)
+    if raw.endswith("```"):
+        raw = raw[::-1].replace("```", "", 1)[::-1]
+
+    raw = raw.strip()
+
     if raw.lower() == "null":
         return None
 
