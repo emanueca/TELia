@@ -1,6 +1,6 @@
 # TELia — Bot de Lembretes com IA
 
-Bot do Telegram que usa Gemini para extrair lembretes de mensagens em linguagem natural.
+Bot do Telegram que usa Gemini para extrair lembretes de mensagens em linguagem natural, com sistema de contas via MySQL.
 
 ## Como rodar
 
@@ -8,12 +8,34 @@ Bot do Telegram que usa Gemini para extrair lembretes de mensagens em linguagem 
 # 1. Instalar dependências
 pip install -r requirements.txt
 
-# 2. Preencher o .env com seus tokens
-cp .env .env.local  # edite o .env diretamente
+# 2. Criar o banco de dados no MySQL
+mysql -u root -p -e "CREATE DATABASE telia_db;"
 
-# 3. Iniciar o bot
+# 3. Preencher o .env com seus tokens e credenciais
+# (veja a seção abaixo)
+
+# 4. Iniciar o bot
 python main.py
 ```
+
+## Variáveis de ambiente (`.env`)
+
+| Variável | Descrição |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Token do BotFather |
+| `GEMINI_API_KEY` | Chave da API do Google Gemini |
+| `MYSQL_HOST` | Host do MySQL (normalmente `localhost`) |
+| `MYSQL_USER` | Usuário do MySQL |
+| `MYSQL_PASSWORD` | Senha do MySQL |
+| `MYSQL_DATABASE` | Nome do banco (`telia_db`) |
+
+## Fluxo de uso
+
+1. Usuário inicia o bot → recebe link do GitHub e instruções
+2. `/cadastrar` → bot envia o formulário para copiar
+3. Usuário cola: `E-mail: x` / `Senha: y` → conta criada com senha criptografada (bcrypt)
+4. `/login` → entra na conta
+5. A partir daí, mensagens livres são processadas pela IA e viram lembretes
 
 ## Estrutura do projeto
 
@@ -25,24 +47,17 @@ TELia/
 ├── README.md             # Instruções de como rodar o seu bot
 ├── main.py               # O arquivo principal que dá a partida no motor
 │
-├── database/             # Tudo relacionado ao SQLite
+├── database/             # Tudo relacionado ao MySQL
 │   ├── connection.py     # Cria o banco e as tabelas
-│   └── queries.py        # Funções para salvar e buscar lembretes
+│   └── queries.py        # Funções para salvar e buscar usuários e lembretes
 │
 ├── bot/                  # Comunicação direta com o Telegram
-│   ├── commands.py       # Comandos como /start e /help
-│   └── messages.py       # Onde chegam as mensagens de texto do usuário
+│   ├── commands.py       # Comandos: /start, /help, /cadastrar, /login
+│   └── messages.py       # Recebe textos, barreira de login, chama a IA
 │
 ├── ai/                   # O "Cérebro"
 │   └── gemini.py         # Conexão com a API da IA e o Prompt de extração
 │
 └── scheduler/            # O "Relógio"
-    └── jobs.py           # Funções que o APScheduler vai disparar (os lembretes)
+    └── jobs.py           # Verifica lembretes pendentes a cada 30s
 ```
-
-## Variáveis de ambiente (`.env`)
-
-| Variável | Descrição |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | Token do BotFather |
-| `GEMINI_API_KEY` | Chave da API do Google Gemini |
