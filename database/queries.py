@@ -4,6 +4,15 @@ from database.connection import get_connection
 _schema_cache: dict[tuple[str, str], bool] = {}
 
 
+def _count_from_row(row) -> int:
+    """Supports both tuple rows and dictionary rows from mysql connector."""
+    if row is None:
+        return 0
+    if isinstance(row, dict):
+        return int(next(iter(row.values()), 0))
+    return int(row[0])
+
+
 def _table_exists(cursor, table_name: str) -> bool:
     key = ("table", table_name)
     if key in _schema_cache:
@@ -17,7 +26,7 @@ def _table_exists(cursor, table_name: str) -> bool:
         """,
         (table_name,),
     )
-    exists = cursor.fetchone()[0] > 0
+    exists = _count_from_row(cursor.fetchone()) > 0
     _schema_cache[key] = exists
     return exists
 
@@ -37,7 +46,7 @@ def _column_exists(cursor, table_name: str, column_name: str) -> bool:
         """,
         (table_name, column_name),
     )
-    exists = cursor.fetchone()[0] > 0
+    exists = _count_from_row(cursor.fetchone()) > 0
     _schema_cache[key] = exists
     return exists
 
