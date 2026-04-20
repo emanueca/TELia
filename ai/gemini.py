@@ -75,6 +75,19 @@ def _clean_json(raw: str) -> str:
     return raw.strip()
 
 
+def _extract_json_object(raw: str) -> dict:
+    """Tries direct parse first, then extracts the outermost JSON object."""
+    cleaned = _clean_json(raw)
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise ValueError("Resposta sem JSON válido")
+        return json.loads(cleaned[start : end + 1])
+
+
 def process_message(
     user_message: str,
     history: list[dict],
@@ -89,6 +102,9 @@ def process_message(
       }
     """
     try:
+        if not os.getenv("GEMINI_API_KEY"):
+            raise RuntimeError("GEMINI_API_KEY não configurada")
+
         now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
         prompt = _PROMPT.format(
             now=now,
@@ -98,22 +114,22 @@ def process_message(
         )
 
         response = _model.generate_content(prompt)
-        raw = _clean_json(response.text or "")
+        raw = response.text or ""
 
         if not raw:
             raise ValueError("resposta vazia do Gemini")
 
-        result = json.loads(raw)
+        result = _extract_json_object(raw)
 
         return {
-            "reply": result.get("reply", "Desculpe, não entendi."),
-            "reminder": result.get("reminder"),
+            "reply": str(result.get("reply") or "Desculpe, não entendi."),
+            "reminder": result.get("reminder") if isinstance(result.get("reminder"), dict) else None,
             "profile_updates": result.get("profile_updates") or [],
         }
     except Exception:
         logger.exception("Falha ao processar mensagem com Gemini.")
         return {
-            "reply": "⚠️ Tive um problema interno. Tente novamente.",
+            "reply": "⚠️ Tive um problema interno. Tente novamente ou contate um adiministrador...",
             "reminder": None,
             "profile_updates": [],
         }

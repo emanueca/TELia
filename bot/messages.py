@@ -180,8 +180,10 @@ async def _processar_login(update: Update, context, chat_id: int, text: str):
         )
         return
 
-    # Atualiza o chat_id caso o usuário acesse de outra conta Telegram
-    set_logado(usuario["chat_id"], True)
+    # Garante login no chat atual e encerra eventual sessão antiga do mesmo e-mail.
+    if usuario["chat_id"] != chat_id:
+        set_logado(usuario["chat_id"], False)
+    set_logado(chat_id, True)
     context.user_data.pop("awaiting", None)
     await update.message.reply_text(
         "✅ Login realizado com sucesso! Bem-vindo(a) de volta! 😊\n\n"

@@ -34,8 +34,8 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Primeira mensagem: explicação
     await update.message.reply_text(
         "*🤖 Como a TELia funciona:*\n\n"
-        "A TELia usa a IA do Google (Gemini) para entender e responder suas mensagens "
-        "de forma inteligente e personalizada.\n\n"
+        "A TELia usa a IA para entender e responder suas mensagens "
+        "com pythonde forma otimizada.\n\n"
         "*💡 Por que criar uma conta?*\n"
         "• Suas conversas ficam salvas — a IA lembra o contexto das últimas mensagens\n"
         "• Lembretes são vinculados à sua conta e enviados no horário certo\n"
@@ -89,29 +89,6 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "       └─ reminders (se foi um lembrete)\n"
         "       ↓\n"
         "  📤 Resposta enviada para você\n"
-        "```\n\n"
-        "*🗄️ Estrutura do Banco de Dados:*\n\n"
-        "📌 *users*\n"
-        "  ├─ chat_id (chave)\n"
-        "  ├─ email\n"
-        "  ├─ password_hash\n"
-        "  ├─ is_logged_in\n"
-        "  └─ created_at\n\n"
-        "📌 *conversation_history*\n"
-        "  ├─ user_id → users.chat_id\n"
-        "  ├─ role (user/assistant)\n"
-        "  ├─ content (mensagem)\n"
-        "  └─ created_at\n\n"
-        "📌 *user_profile*\n"
-        "  ├─ user_id → users.chat_id\n"
-        "  ├─ key_name (ex: 'nome')\n"
-        "  ├─ value (ex: 'Emanuel')\n"
-        "  └─ updated_at\n\n"
-        "📌 *reminders*\n"
-        "  ├─ user_id → users.chat_id\n"
-        "  ├─ message\n"
-        "  ├─ remind_at (data/hora)\n"
-        "  └─ sent (0=pendente, 1=enviado)",
         parse_mode="Markdown",
     )
 
