@@ -4,7 +4,7 @@ import os
 
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters
 
-from bot.commands import start, help_command, cadastrar, login, sair
+from bot.commands import start, help_command, cadastrar, login, sair, ajuda
 from bot.messages import handle_message
 from scheduler.jobs import start_scheduler
 
@@ -21,6 +21,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("ajuda", ajuda))
     app.add_handler(CommandHandler("cadastrar", cadastrar))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("sair", sair))

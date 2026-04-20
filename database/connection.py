@@ -68,6 +68,29 @@ def init_db():
 
     _ensure_pending_index(cursor)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS conversation_history (
+            id         INT AUTO_INCREMENT PRIMARY KEY,
+            user_id    BIGINT NOT NULL,
+            role       ENUM('user', 'assistant') NOT NULL,
+            content    TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_profile (
+            id         INT AUTO_INCREMENT PRIMARY KEY,
+            user_id    BIGINT NOT NULL,
+            key_name   VARCHAR(100) NOT NULL,
+            value      TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+            UNIQUE KEY unique_user_key (user_id, key_name)
+        )
+    """)
+
     conn.commit()
     cursor.close()
     conn.close()

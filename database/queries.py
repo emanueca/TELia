@@ -43,6 +43,32 @@ def _column_exists(cursor, table_name: str, column_name: str) -> bool:
 
 # ── Usuários ──────────────────────────────────────────────
 
+def verificar_login(email: str, senha_hash: str) -> dict | None:
+    """Returns the user row if email+password match, else None."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT chat_id, email, is_logged_in AS logado
+        FROM users
+        WHERE email = %s AND password_hash = %s
+        """,
+        (email, senha_hash),
+    )
+    usuario = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return usuario
+
+def email_existe(email: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(1) FROM users WHERE email = %s", (email,))
+    exists = cursor.fetchone()[0] > 0
+    cursor.close()
+    conn.close()
+    return exists
+
 def get_usuario(chat_id: int) -> dict | None:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -200,6 +226,68 @@ def get_pending_reminders() -> list[dict]:
     cursor.close()
     conn.close()
     return reminders
+
+# ── Histórico de conversa ──────────────────────────────────
+
+def save_message(user_id: int, role: str, content: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO conversation_history (user_id, role, content) VALUES (%s, %s, %s)",
+        (user_id, role, content),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+def get_history(user_id: int, limit: int = 15) -> list[dict]:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT role, content FROM (
+            SELECT role, content, created_at
+            FROM conversation_history
+            WHERE user_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+        ) sub ORDER BY created_at ASC
+        """,
+        (user_id, limit),
+    )
+    history = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return history
+
+# ── Perfil do usuário ─────────────────────────────────────
+
+def get_profile(user_id: int) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT key_name, value FROM user_profile WHERE user_id = %s",
+        (user_id,),
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return {row["key_name"]: row["value"] for row in rows}
+
+def upsert_profile(user_id: int, key: str, value: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO user_profile (user_id, key_name, value)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE value = %s, updated_at = CURRENT_TIMESTAMP
+        """,
+        (user_id, key, value, value),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 def mark_as_sent(reminder_id: int):
     conn = get_connection()

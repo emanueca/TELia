@@ -4,50 +4,82 @@ from telegram.ext import ContextTypes
 GITHUB_URL = "https://github.com/emanueca/TELia/tree/main#"
 MSG_GITHUB = f"\n\n🌟 Conheça o projeto: {GITHUB_URL}"
 
+_FORM_LOGIN = (
+    "Para entrar, copie a mensagem abaixo, preencha com seus dados e me envie de volta:\n\n"
+    "E-mail: \nSenha: "
+)
+
+_FORM_CADASTRAR = (
+    "Para se cadastrar, copie a mensagem abaixo, preencha com seus dados e me envie de volta:\n\n"
+    "E-mail: \nSenha: "
+)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("awaiting", None)
     await update.message.reply_text(
-        "Oi! Sou a *TELia*, sua assistente de lembretes com IA.\n\n"
+        "Oi! Sou a *TELia*, sua assistente pessoal com IA.\n\n"
         "Para começar, crie sua conta com /cadastrar ou entre com /login.\n"
-        "Quando quiser sair da sessão atual, use /sair."
-        + MSG_GITHUB,
+        "Quando quiser sair da sessão, use /sair.\n"
+        "Para saber mais, use /ajuda." + MSG_GITHUB,
         parse_mode="Markdown",
     )
+
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await ajuda(update, context)
+
+
+async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "*Como usar:*\n"
-        "Após o login, escreva naturalmente o que quer lembrar e quando.\n\n"
-        "Exemplos:\n"
-        "• _Lembra de tomar remédio em 30 minutos_\n"
-        "• _Me avisa amanhã às 9h para a reunião_\n\n"
+        "*Como a TELia funciona:*\n\n"
+        "A TELia usa a IA do Google (Gemini) para entender e responder suas mensagens "
+        "de forma inteligente e personalizada.\n\n"
+        "*Por que criar uma conta?*\n"
+        "• Suas conversas ficam salvas — a IA lembra o contexto das últimas mensagens\n"
+        "• Lembretes são vinculados à sua conta e enviados no horário certo\n"
+        "• A IA aprende informações sobre você (nome, cidade, profissão...) e usa isso nas respostas\n"
+        "• Seus dados ficam protegidos por senha\n\n"
+        "*Como a IA funciona:*\n"
+        "Cada mensagem sua é enviada ao Gemini junto com:\n"
+        "  1. Seu histórico recente de conversa (últimas 15 mensagens)\n"
+        "  2. Seu perfil (informações que você compartilhou)\n"
+        "Isso permite respostas com contexto e memória real.\n\n"
+        "*O que você pode fazer:*\n"
+        "• *Conversar livremente* — faça perguntas, peça opiniões, bata papo\n"
+        "• *Criar lembretes* — 'me lembra de tomar remédio às 10h'\n"
+        "• *Compartilhar informações* — 'meu nome é Ana' — a IA vai lembrar!\n\n"
         "*Comandos:*\n"
-        "/cadastrar — criar conta\n"
+        "/cadastrar — criar nova conta\n"
         "/login — entrar na conta\n"
-        "/sair — encerrar sessão"
-        + MSG_GITHUB,
+        "/sair — encerrar sessão\n"
+        "/ajuda — esta mensagem" + MSG_GITHUB,
         parse_mode="Markdown",
     )
 
+
 async def cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Para se cadastrar, copie a mensagem abaixo, preencha com seus dados e me envie de volta:\n\n"
-        "E-mail: x\nSenha: y"
-        + MSG_GITHUB,
-    )
+    context.user_data["awaiting"] = "cadastrar"
+    await update.message.reply_text(_FORM_CADASTRAR + MSG_GITHUB)
+
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from database.queries import get_usuario, set_logado
+    from database.queries import get_usuario
+
     chat_id = update.effective_chat.id
     usuario = get_usuario(chat_id)
 
-    if not usuario:
+    if usuario and usuario["logado"]:
         await update.message.reply_text(
-            "Você ainda não tem conta. Use /cadastrar para criar uma." + MSG_GITHUB
+            "Você já está logado! Pode me enviar uma mensagem. 😊\n"
+            "Para sair, use /sair."
         )
         return
 
-    set_logado(chat_id, True)
-    await update.message.reply_text("Você está logado! Me manda um lembrete. 😊")
+    context.user_data["awaiting"] = "login"
+    await update.message.reply_text(
+        "No chat, adicione suas informações aqui!\n\n" + _FORM_LOGIN + MSG_GITHUB
+    )
 
 
 async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -56,14 +88,17 @@ async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     usuario = get_usuario(chat_id)
 
-    if not usuario:
+    context.user_data.pop("awaiting", None)
+
+    if not usuario or not usuario["logado"]:
         await update.message.reply_text(
-            "Você ainda não tem conta ativa aqui. Use /cadastrar para criar uma." + MSG_GITHUB
+            "Você não está logado no momento.\n"
+            "Use /login para entrar ou /cadastrar para criar uma conta." + MSG_GITHUB
         )
         return
 
     set_logado(chat_id, False)
     await update.message.reply_text(
-        "Sessão encerrada com sucesso.\n"
+        "Sessão encerrada com sucesso. Até logo! 👋\n"
         "Quando quiser voltar, use /login."
     )
