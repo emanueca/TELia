@@ -1,15 +1,26 @@
 import os
 import json
 import logging
+import math
+import re
 from datetime import datetime
 import google.generativeai as genai
+from google.api_core.exceptions import ResourceExhausted, NotFound
 from dotenv import load_dotenv
 
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-_model = genai.GenerativeModel("gemini-1.5-flash")
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+_model_cache: dict[str, genai.GenerativeModel] = {}
 logger = logging.getLogger(__name__)
+
+_ALLOWED_MODELS = {
+    "gemini-2.0-flash",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash-lite",
+}
 
 _PROMPT = """Você é a TELia, uma assistente pessoal no Telegram. Responda sempre em português brasileiro, de forma natural e amigável.
 
@@ -88,6 +99,32 @@ def _extract_json_object(raw: str) -> dict:
         return json.loads(cleaned[start : end + 1])
 
 
+def _get_selected_model(profile: dict) -> str:
+    profile_model = str((profile or {}).get("ai_model") or "").strip()
+    if profile_model in _ALLOWED_MODELS:
+        return profile_model
+    if DEFAULT_MODEL in _ALLOWED_MODELS:
+        return DEFAULT_MODEL
+    return "gemini-2.0-flash"
+
+
+def _get_model(model_name: str) -> genai.GenerativeModel:
+    if model_name not in _model_cache:
+        _model_cache[model_name] = genai.GenerativeModel(model_name)
+    return _model_cache[model_name]
+
+
+def _extract_retry_seconds(exc: Exception) -> int | None:
+    message = str(exc)
+    match = re.search(r"Please retry in\s+([0-9]+(?:\.[0-9]+)?)s", message)
+    if match:
+        return max(1, math.ceil(float(match.group(1))))
+    match = re.search(r"retry_delay\s*\{\s*seconds:\s*([0-9]+)", message)
+    if match:
+        return max(1, int(match.group(1)))
+    return None
+
+
 def process_message(
     user_message: str,
     history: list[dict],
@@ -113,7 +150,8 @@ def process_message(
             user_message=user_message,
         )
 
-        response = _model.generate_content(prompt)
+        selected_model = _get_selected_model(profile)
+        response = _get_model(selected_model).generate_content(prompt)
         raw = response.text or ""
 
         if not raw:
@@ -125,6 +163,29 @@ def process_message(
             "reply": str(result.get("reply") or "Desculpe, não entendi."),
             "reminder": result.get("reminder") if isinstance(result.get("reminder"), dict) else None,
             "profile_updates": result.get("profile_updates") or [],
+        }
+    except ResourceExhausted as exc:
+        logger.warning("Cota da API Gemini esgotada: %s", exc)
+        retry_seconds = _extract_retry_seconds(exc)
+        if retry_seconds:
+            retry_minutes = max(1, math.ceil(retry_seconds / 60))
+            wait_hint = (
+                f"⚠️ A cota da IA esta no limite. Espere cerca de {retry_minutes} min "
+                f"({retry_seconds}s) para tentar novamente."
+            )
+        else:
+            wait_hint = "⚠️ A cota da IA esta no limite. Espere alguns minutos para tentar novamente."
+        return {
+            "reply": wait_hint,
+            "reminder": None,
+            "profile_updates": [],
+        }
+    except NotFound:
+        logger.exception("Modelo Gemini indisponível para esta chave/projeto.")
+        return {
+            "reply": "⚠️ O modelo Gemini configurado não está disponível para esta chave. Ajuste a variável GEMINI_MODEL para um modelo habilitado.",
+            "reminder": None,
+            "profile_updates": [],
         }
     except Exception:
         logger.exception("Falha ao processar mensagem com Gemini.")

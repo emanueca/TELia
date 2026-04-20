@@ -3,7 +3,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.commands import MSG_GITHUB
+from bot.commands import MSG_GITHUB, resolve_ai_model_choice
 from database.queries import (
     get_usuario,
     criar_usuario,
@@ -43,6 +43,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text.strip()
         chat_id = update.effective_chat.id
         awaiting = context.user_data.get("awaiting")
+
+        if awaiting == "ia_model":
+            selected_model = resolve_ai_model_choice(text)
+            if not selected_model:
+                await update.message.reply_text(
+                    "❌ Opção inválida. Responda com 1, 2, 3 ou 4.\n"
+                    "Exemplos válidos: 1, 2, 3, 4, gemini-2.0-flash"
+                )
+                return
+            upsert_profile(chat_id, "ai_model", selected_model)
+            context.user_data.pop("awaiting", None)
+            await update.message.reply_text(
+                f"✅ Modelo da sua conta atualizado para: {selected_model}."
+            )
+            return
 
         # ── Fluxo de formulário (login ou cadastro) ───────────
         if text.startswith("E-mail:") and "Senha:" in text:
