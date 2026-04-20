@@ -13,12 +13,14 @@ def _get_pool():
     if _db_pool is None:
         _db_pool = pooling.MySQLConnectionPool(
             pool_name="telia_pool",
-            pool_size=5,
+            pool_size=20,  # Aumentado de 5 para 20
+            max_overflow=10,  # Permite 10 conexões extras em picos
             pool_reset_session=True,
             host=os.getenv("MYSQL_HOST"),
             user=os.getenv("MYSQL_USER"),
             password=os.getenv("MYSQL_PASSWORD"),
             database=os.getenv("MYSQL_DATABASE"),
+            autocommit=False,
         )
     return _db_pool
 

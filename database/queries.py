@@ -176,56 +176,60 @@ def save_reminder(chat_id: int, message: str, remind_at: str):
     conn.close()
 
 def get_pending_reminders() -> list[dict]:
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    if _table_exists(cursor, "reminders"):
-        if _column_exists(cursor, "reminders", "user_id"):
-            cursor.execute(
-                """
-                SELECT
-                    id,
-                    user_id AS chat_id,
-                    message,
-                    remind_at,
-                    sent
-                FROM reminders
-                WHERE sent = FALSE AND remind_at <= %s
-                """,
-                (now,),
-            )
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        if _table_exists(cursor, "reminders"):
+            if _column_exists(cursor, "reminders", "user_id"):
+                cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        user_id AS chat_id,
+                        message,
+                        remind_at,
+                        sent
+                    FROM reminders
+                    WHERE sent = FALSE AND remind_at <= %s
+                    """,
+                    (now,),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        id,
+                        chat_id,
+                        message,
+                        remind_at,
+                        sent
+                    FROM reminders
+                    WHERE sent = FALSE AND remind_at <= %s
+                    """,
+                    (now,),
+                )
         else:
             cursor.execute(
                 """
                 SELECT
                     id,
-                    chat_id,
-                    message,
-                    remind_at,
-                    sent
-                FROM reminders
-                WHERE sent = FALSE AND remind_at <= %s
+                    user_id AS chat_id,
+                    mensagem AS message,
+                    data_lembrete AS remind_at,
+                    enviado AS sent
+                FROM lembretes
+                WHERE enviado = FALSE AND data_lembrete <= %s
                 """,
                 (now,),
             )
-    else:
-        cursor.execute(
-            """
-            SELECT
-                id,
-                user_id AS chat_id,
-                mensagem AS message,
-                data_lembrete AS remind_at,
-                enviado AS sent
-            FROM lembretes
-            WHERE enviado = FALSE AND data_lembrete <= %s
-            """,
-            (now,),
-        )
-    reminders = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return reminders
+        reminders = cursor.fetchall()
+        cursor.close()
+        return reminders
+    finally:
+        if conn:
+            conn.close()
 
 # ── Histórico de conversa ──────────────────────────────────
 
@@ -290,12 +294,16 @@ def upsert_profile(user_id: int, key: str, value: str):
     conn.close()
 
 def mark_as_sent(reminder_id: int):
-    conn = get_connection()
-    cursor = conn.cursor()
-    if _table_exists(cursor, "reminders"):
-        cursor.execute("UPDATE reminders SET sent = TRUE WHERE id = %s", (reminder_id,))
-    else:
-        cursor.execute("UPDATE lembretes SET enviado = TRUE WHERE id = %s", (reminder_id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    conn = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        if _table_exists(cursor, "reminders"):
+            cursor.execute("UPDATE reminders SET sent = TRUE WHERE id = %s", (reminder_id,))
+        else:
+            cursor.execute("UPDATE lembretes SET enviado = TRUE WHERE id = %s", (reminder_id,))
+        conn.commit()
+        cursor.close()
+    finally:
+        if conn:
+            conn.close()
