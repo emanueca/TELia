@@ -89,6 +89,7 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "       └─ reminders (se foi um lembrete)\n"
         "       ↓\n"
         "  📤 Resposta enviada para você\n"
+        "```",
         parse_mode="Markdown",
     )
 
