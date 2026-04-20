@@ -80,6 +80,25 @@ def init_db():
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reminder_tasks (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            kind ENUM('LU','LR') NOT NULL,
+            message TEXT NOT NULL,
+            schedule_code VARCHAR(120) NOT NULL,
+            recurrence_rule VARCHAR(120) NULL,
+            timezone VARCHAR(64) NOT NULL DEFAULT 'America/Sao_Paulo',
+            next_run_at DATETIME NOT NULL,
+            last_sent_at DATETIME NULL,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+            INDEX idx_reminder_tasks_due (active, next_run_at)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_profile (
             id         INT AUTO_INCREMENT PRIMARY KEY,
             user_id    BIGINT NOT NULL,

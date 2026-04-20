@@ -1,0 +1,15 @@
+FastAPI / Uvicorn: Para criar a API e o site futuramente.
+
+APScheduler: O cronômetro que vai vigiar o banco de dados.
+
+mysql-connector-python: Para o Python falar com o seu banco.
+
+4. Organização de Arquivos
+
+Para o código não virar uma bagunça, sugiro que sua pasta do projeto (TELia) tenha essa cara agora:
+
+    main.py (O bot do Telegram)
+    gemini.py (A lógica da IA e tradutor LU/LR)
+    jobs.py (O script do Scheduler que instalamos agora)
+    queries.py (As funções que salvam e buscam no MySQL)
+    .env (Suas chaves e senhas)

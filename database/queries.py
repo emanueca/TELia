@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from database.connection import get_connection
 
 _schema_cache: dict[tuple[str, str], bool] = {}
@@ -239,6 +239,201 @@ def get_pending_reminders() -> list[dict]:
     finally:
         if conn:
             conn.close()
+
+
+def save_reminder_task(
+    user_id: int,
+    kind: str,
+    message: str,
+    schedule_code: str,
+    recurrence_rule: str | None,
+    next_run_at: str,
+    timezone: str = "America/Sao_Paulo",
+):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO reminder_tasks (
+            user_id,
+            kind,
+            message,
+            schedule_code,
+            recurrence_rule,
+            timezone,
+            next_run_at,
+            active
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+        """,
+        (user_id, kind, message, schedule_code, recurrence_rule, timezone, next_run_at),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def get_due_reminder_tasks(limit: int = 100) -> list[dict]:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute(
+        """
+        SELECT
+            id,
+            user_id AS chat_id,
+            kind,
+            message,
+            schedule_code,
+            recurrence_rule,
+            timezone,
+            next_run_at,
+            last_sent_at,
+            active
+        FROM reminder_tasks
+        WHERE active = TRUE
+          AND next_run_at <= %s
+        ORDER BY next_run_at ASC
+        LIMIT %s
+        """,
+        (now, limit),
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+
+
+def get_active_reminder_tasks(user_id: int) -> list[dict]:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT id, user_id, kind, message, schedule_code, recurrence_rule, timezone, next_run_at, created_at
+        FROM reminder_tasks
+        WHERE user_id = %s AND active = TRUE
+        ORDER BY created_at ASC
+        """,
+        (user_id,),
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+
+
+def get_reminder_task_by_id(user_id: int, task_id: int) -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT id, user_id, kind, message, schedule_code, recurrence_rule, timezone, next_run_at, active
+        FROM reminder_tasks
+        WHERE id = %s AND user_id = %s
+        """,
+        (task_id, user_id),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return row
+
+
+def deactivate_reminder_task(user_id: int, task_id: int) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE reminder_tasks
+        SET active = FALSE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s AND user_id = %s
+        """,
+        (task_id, user_id),
+    )
+    changed = cursor.rowcount > 0
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return changed
+
+
+def update_reminder_task_schedule(
+    user_id: int,
+    task_id: int,
+    kind: str,
+    message: str,
+    schedule_code: str,
+    recurrence_rule: str | None,
+    timezone_name: str,
+    next_run_at: str,
+) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        UPDATE reminder_tasks
+        SET kind = %s,
+            message = %s,
+            schedule_code = %s,
+            recurrence_rule = %s,
+            timezone = %s,
+            next_run_at = %s,
+            active = TRUE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s AND user_id = %s
+        """,
+        (kind, message, schedule_code, recurrence_rule, timezone_name, next_run_at, task_id, user_id),
+    )
+    changed = cursor.rowcount > 0
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return changed
+
+
+def mark_reminder_task_sent(
+    task_id: int,
+    next_run_at: str | None = None,
+    deactivate: bool = False,
+):
+    conn = get_connection()
+    cursor = conn.cursor()
+    if deactivate:
+        cursor.execute(
+            """
+            UPDATE reminder_tasks
+            SET active = FALSE,
+                last_sent_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (task_id,),
+        )
+    elif next_run_at:
+        cursor.execute(
+            """
+            UPDATE reminder_tasks
+            SET next_run_at = %s,
+                last_sent_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (next_run_at, task_id),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE reminder_tasks
+            SET last_sent_at = CURRENT_TIMESTAMP,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """,
+            (task_id,),
+        )
+    conn.commit()
+    cursor.close()
+    conn.close()
 
 # ── Histórico de conversa ──────────────────────────────────
 

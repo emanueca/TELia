@@ -1,5 +1,19 @@
-from telegram import ReplyKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    Update,
+)
 from telegram.ext import ContextTypes
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+try:
+    from timezonefinder import TimezoneFinder
+except Exception:
+    TimezoneFinder = None
 
 GITHUB_URL = "https://github.com/emanueca/TELia/tree/main#"
 MSG_GITHUB = f"\n\n🌟 Conheça o projeto: {GITHUB_URL}"
@@ -47,6 +61,17 @@ def resolve_ai_model_choice(text: str) -> str | None:
     return None
 
 
+def _format_task_next_run(task: dict) -> str:
+    next_run = task.get("next_run_at")
+    tz_name = task.get("timezone") or "America/Sao_Paulo"
+    try:
+        dt_utc = datetime.fromisoformat(str(next_run).replace(" ", "T")).replace(tzinfo=timezone.utc)
+        dt_local = dt_utc.astimezone(ZoneInfo(tz_name))
+        return dt_local.strftime("%d/%m %H:%M")
+    except Exception:
+        return str(next_run)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting", None)
     await update.message.reply_text(
@@ -87,6 +112,8 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/login — entrar na conta\n"
         "/sair — encerrar sessão\n"
         "/ia — escolher modelo de IA\n"
+        "/lembretes — listar, apagar ou mudar lembretes\n"
+        "/timezone — definir seu fuso horario\n"
         "/ajuda — esta mensagem" + MSG_GITHUB,
         parse_mode="Markdown",
     )
@@ -148,6 +175,179 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting"] = "login"
     await update.message.reply_text(
         "No chat, adicione suas informações aqui!\n\n" + _FORM_LOGIN + MSG_GITHUB
+    )
+
+
+async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from database.queries import get_usuario, get_profile
+
+    chat_id = update.effective_chat.id
+    usuario = get_usuario(chat_id)
+    if not usuario or not usuario["logado"]:
+        await update.message.reply_text(
+            "👋 Para configurar o fuso horário, você precisa estar logado.\n"
+            "Use /login ou /cadastrar." + MSG_GITHUB
+        )
+        return
+
+    profile = get_profile(chat_id)
+    atual = profile.get("timezone", "America/Sao_Paulo")
+    context.user_data["awaiting"] = "timezone_select"
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Sao Paulo", callback_data="timezone:set:America/Sao_Paulo"),
+            InlineKeyboardButton("Manaus", callback_data="timezone:set:America/Manaus"),
+        ],
+        [
+            InlineKeyboardButton("Lisboa", callback_data="timezone:set:Europe/Lisbon"),
+            InlineKeyboardButton("Londres", callback_data="timezone:set:Europe/London"),
+        ],
+        [
+            InlineKeyboardButton("Nova York", callback_data="timezone:set:America/New_York"),
+            InlineKeyboardButton("Toquio", callback_data="timezone:set:Asia/Tokyo"),
+        ],
+        [
+            InlineKeyboardButton("Usar localizacao do Telegram", callback_data="timezone:share_location"),
+        ],
+    ]
+
+    await update.message.reply_text(
+        f"🕒 Fuso atual: {atual}\n\n"
+        "Escolha um fuso nos botões abaixo ou use sua localização para detectar automaticamente.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def lembretes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from database.queries import get_usuario, get_active_reminder_tasks
+
+    chat_id = update.effective_chat.id
+    usuario = get_usuario(chat_id)
+    if not usuario or not usuario["logado"]:
+        await update.message.reply_text(
+            "👋 Para ver seus lembretes, você precisa estar logado.\n"
+            "Use /login ou /cadastrar." + MSG_GITHUB
+        )
+        return
+
+    tasks = get_active_reminder_tasks(chat_id)
+    if not tasks:
+        context.user_data.pop("lista_lembretes_recente", None)
+        await update.message.reply_text(
+            "Você não tem lembretes ativos no momento.\n"
+            "Me peça um lembrete para começar."
+        )
+        return
+
+    context.user_data["lista_lembretes_recente"] = [task["id"] for task in tasks]
+
+    lines = []
+    for i, task in enumerate(tasks, start=1):
+        when = _format_task_next_run(task)
+        lines.append(f"{i}. {task['message']} ({when})")
+
+    await update.message.reply_text(
+        "📌 *Seus lembretes ativos:*\n\n"
+        + "\n".join(lines)
+        + "\n\n"
+        + "Digite *apagar N* ou *mudar N*.\n"
+        + "Exemplos: `apagar 1` ou `mudar 2`.",
+        parse_mode="Markdown",
+    )
+
+
+async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from database.queries import get_usuario, upsert_profile
+
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+
+    chat_id = update.effective_chat.id
+    usuario = get_usuario(chat_id)
+    if not usuario or not usuario["logado"]:
+        await query.edit_message_text(
+            "👋 Para configurar o fuso horário, faça login com /login."
+        )
+        return
+
+    if data.startswith("timezone:set:"):
+        tz = data.split(":", 2)[2]
+        upsert_profile(chat_id, "timezone", tz)
+        context.user_data.pop("awaiting", None)
+        await query.edit_message_text(
+            f"✅ Fuso horário atualizado para: {tz}.\n"
+            "Seus lembretes agora seguem esse horário local."
+        )
+        return
+
+    if data == "timezone:share_location":
+        context.user_data["awaiting"] = "timezone_location"
+        await query.message.reply_text(
+            "Toque no botão abaixo para enviar sua localização.\n"
+            "Com isso eu detecto seu fuso automaticamente.",
+            reply_markup=ReplyKeyboardMarkup(
+                [[KeyboardButton("Enviar localizacao", request_location=True)]],
+                one_time_keyboard=True,
+                resize_keyboard=True,
+            ),
+        )
+        await query.edit_message_text(
+            "📍 Aguardando sua localização pelo botão do Telegram..."
+        )
+
+
+async def timezone_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from database.queries import get_usuario, upsert_profile
+
+    if context.user_data.get("awaiting") != "timezone_location":
+        return
+
+    chat_id = update.effective_chat.id
+    usuario = get_usuario(chat_id)
+    if not usuario or not usuario["logado"]:
+        await update.message.reply_text(
+            "👋 Para configurar o fuso horário, faça login com /login.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    location = update.message.location
+    if not location:
+        await update.message.reply_text(
+            "Não recebi uma localização válida. Tente novamente com /timezone.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    if TimezoneFinder is None:
+        await update.message.reply_text(
+            "Não consegui detectar o fuso automaticamente agora. "
+            "Escolha manualmente com /timezone.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    tf = TimezoneFinder()
+    tz = tf.timezone_at(lng=location.longitude, lat=location.latitude)
+    if not tz:
+        tz = tf.closest_timezone_at(lng=location.longitude, lat=location.latitude)
+
+    if not tz:
+        await update.message.reply_text(
+            "Não consegui identificar seu fuso pela localização. "
+            "Escolha manualmente com /timezone.",
+            reply_markup=ReplyKeyboardRemove(),
+        )
+        return
+
+    upsert_profile(chat_id, "timezone", tz)
+    context.user_data.pop("awaiting", None)
+    await update.message.reply_text(
+        f"✅ Fuso detectado automaticamente: {tz}.\n"
+        "Seus próximos lembretes já vão respeitar esse horário.",
+        reply_markup=ReplyKeyboardRemove(),
     )
 
 

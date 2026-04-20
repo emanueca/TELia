@@ -65,6 +65,22 @@ CREATE TABLE IF NOT EXISTS user_profile (
     FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
     UNIQUE KEY unique_user_key (user_id, key_name)
 );
+--tarefas que vai ser mandada
+CREATE TABLE IF NOT EXISTS reminder_tasks (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    kind ENUM('LU','LR') NOT NULL, -- LU: Único, LR: Recorrente
+    message TEXT NOT NULL,
+    schedule_code VARCHAR(120) NOT NULL, -- O código da IA (ex: LR|16:00|DAILY)
+    recurrence_rule VARCHAR(120) NULL,   -- DAILY, WEEKLY, etc.
+    timezone VARCHAR(64) NOT NULL DEFAULT 'America/Sao_Paulo',
+    next_run_at DATETIME NOT NULL,       -- O próximo momento de disparar
+    last_sent_at DATETIME NULL,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_reminder_tasks_due (active, next_run_at)
+);
 
 -- (Opcional) Limpeza das tabelas antigas em pt-BR, se ainda existirem:
 -- SET FOREIGN_KEY_CHECKS=0;

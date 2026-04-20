@@ -41,7 +41,8 @@ Analise a mensagem do usuário e responda em JSON com este formato exato:
 {{
   "reply": "sua resposta para o usuário",
   "reminder": null,
-  "profile_updates": []
+    "profile_updates": [],
+    "logic_code": null
 }}
 
 Regras:
@@ -52,6 +53,15 @@ Regras:
   - "trabalho como médico" → [{{"key": "profissão", "value": "médico"}}]
   - "moro em SP" → [{{"key": "cidade", "value": "São Paulo"}}]
   - Se nenhuma info pessoal → []
+- "logic_code": quando o usuário pedir lembrete, você DEVE preencher com um dos formatos:
+    - "[LR|HH:MM|DAILY]" para recorrente diário
+    - "[LR|HH:MM|WEEKLY:MON,WED,FRI]" para recorrente semanal
+    - "[LU|YYYY-MM-DDTHH:MM:SS]" para lembrete único
+    - Se não for lembrete, use null
+- Não falhe no formato do logic_code quando houver pedido de lembrete.
+- Exemplos:
+    - "Me lembre de ir na academia segunda, quarta e sexta às 08:30" -> "[LR|08:30|WEEKLY:MON,WED,FRI]"
+    - "Todo sábado às 10h quero limpar a casa" -> "[LR|10:00|WEEKLY:SAT]"
 
 Use o perfil e histórico para personalizar a resposta quando relevante.
 Responda APENAS com JSON válido, sem markdown nem texto fora do JSON.
@@ -163,6 +173,7 @@ def process_message(
             "reply": str(result.get("reply") or "Desculpe, não entendi."),
             "reminder": result.get("reminder") if isinstance(result.get("reminder"), dict) else None,
             "profile_updates": result.get("profile_updates") or [],
+            "logic_code": result.get("logic_code"),
         }
     except ResourceExhausted as exc:
         logger.warning("Cota da API Gemini esgotada: %s", exc)
@@ -179,6 +190,7 @@ def process_message(
             "reply": wait_hint,
             "reminder": None,
             "profile_updates": [],
+            "logic_code": None,
         }
     except NotFound:
         logger.exception("Modelo Gemini indisponível para esta chave/projeto.")
@@ -186,6 +198,7 @@ def process_message(
             "reply": "⚠️ O modelo Gemini configurado não está disponível para esta chave. Ajuste a variável GEMINI_MODEL para um modelo habilitado.",
             "reminder": None,
             "profile_updates": [],
+            "logic_code": None,
         }
     except Exception:
         logger.exception("Falha ao processar mensagem com Gemini.")
@@ -193,4 +206,5 @@ def process_message(
             "reply": "⚠️ Tive um problema interno. Tente novamente ou contate um adiministrador...",
             "reminder": None,
             "profile_updates": [],
+            "logic_code": None,
         }

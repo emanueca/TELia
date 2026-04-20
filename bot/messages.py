@@ -1,5 +1,8 @@
 import hashlib
 import logging
+import re
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -11,6 +14,10 @@ from database.queries import (
     email_existe,
     set_logado,
     save_reminder,
+    save_reminder_task,
+    get_reminder_task_by_id,
+    deactivate_reminder_task,
+    update_reminder_task_schedule,
     save_message,
     get_history,
     get_profile,
@@ -19,6 +26,16 @@ from database.queries import (
 from ai.gemini import process_message
 
 logger = logging.getLogger(__name__)
+_DEFAULT_TZ = "America/Sao_Paulo"
+_DAY_TO_WEEKDAY = {
+    "MON": 0,
+    "TUE": 1,
+    "WED": 2,
+    "THU": 3,
+    "FRI": 4,
+    "SAT": 5,
+    "SUN": 6,
+}
 
 
 def _hash(senha: str) -> str:
@@ -38,11 +55,263 @@ def _parse_form(text: str) -> tuple[str, str] | None:
         return None
 
 
+def _to_datetime(value) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    text = value.strip().replace(" ", "T")
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _get_user_timezone(profile: dict | None) -> str:
+    tz_value = str((profile or {}).get("timezone") or _DEFAULT_TZ).strip()
+    try:
+        ZoneInfo(tz_value)
+        return tz_value
+    except Exception:
+        return _DEFAULT_TZ
+
+
+def _local_to_utc_naive(dt_local: datetime, tz_name: str) -> datetime:
+    local_aware = dt_local.replace(tzinfo=ZoneInfo(tz_name))
+    return local_aware.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _next_daily_run(time_str: str, tz_name: str) -> datetime | None:
+    try:
+        hour, minute = time_str.split(":", 1)
+        now_local = datetime.now(ZoneInfo(tz_name))
+        target_local = now_local.replace(
+            hour=int(hour),
+            minute=int(minute),
+            second=0,
+            microsecond=0,
+        )
+        if target_local <= now_local:
+            target_local = target_local + timedelta(days=1)
+        return target_local.replace(tzinfo=None)
+    except Exception:
+        return None
+
+
+def _next_weekly_run(time_str: str, days_csv: str, tz_name: str) -> datetime | None:
+    try:
+        hour, minute = time_str.split(":", 1)
+        now_local = datetime.now(ZoneInfo(tz_name))
+        base_local = now_local.replace(
+            hour=int(hour),
+            minute=int(minute),
+            second=0,
+            microsecond=0,
+        )
+        day_tokens = [token.strip().upper() for token in days_csv.split(",") if token.strip()]
+        target_weekdays = {_DAY_TO_WEEKDAY[token] for token in day_tokens if token in _DAY_TO_WEEKDAY}
+        if not target_weekdays:
+            return None
+
+        for offset in range(0, 8):
+            candidate = base_local + timedelta(days=offset)
+            if candidate.weekday() in target_weekdays and candidate > now_local:
+                return candidate.replace(tzinfo=None)
+        return None
+    except Exception:
+        return None
+
+
+def _translate_logic_code(logic_code: str, reminder: dict | None, profile: dict | None) -> dict | None:
+    if not logic_code:
+        return None
+
+    cleaned = logic_code.strip()
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        cleaned = cleaned[1:-1].strip()
+
+    parts = [part.strip() for part in cleaned.split("|")]
+    if len(parts) < 2:
+        return None
+
+    kind = parts[0].upper()
+    message = ((reminder or {}).get("message") or "Lembrete").strip()
+    tz_name = _get_user_timezone(profile)
+
+    if kind == "LU":
+        run_at_local = _to_datetime(parts[1])
+        if not run_at_local:
+            return None
+        run_at_utc = _local_to_utc_naive(run_at_local, tz_name)
+        return {
+            "kind": "LU",
+            "message": message,
+            "schedule_code": cleaned,
+            "recurrence_rule": None,
+            "timezone": tz_name,
+            "next_run_at": run_at_utc.strftime("%Y-%m-%d %H:%M:%S"),
+            "display_run_at": run_at_local.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    if kind == "LR" and len(parts) >= 3:
+        if not re.match(r"^\d{2}:\d{2}$", parts[1]):
+            return None
+        recurrence_rule = parts[2].upper()
+        next_run_local = None
+        if recurrence_rule == "DAILY":
+            next_run_local = _next_daily_run(parts[1], tz_name)
+        elif recurrence_rule.startswith("WEEKLY:"):
+            next_run_local = _next_weekly_run(parts[1], recurrence_rule.split(":", 1)[1], tz_name)
+        else:
+            return None
+        if not next_run_local:
+            return None
+        next_run_utc = _local_to_utc_naive(next_run_local, tz_name)
+        return {
+            "kind": "LR",
+            "message": message,
+            "schedule_code": cleaned,
+            "recurrence_rule": recurrence_rule,
+            "timezone": tz_name,
+            "next_run_at": next_run_utc.strftime("%Y-%m-%d %H:%M:%S"),
+            "display_run_at": next_run_local.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+    return None
+
+
+async def _handle_reminder_menu_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    text: str,
+) -> bool:
+    match = re.match(r"^(?:(apagar|deletar|mudar|modificar)\s+)?(\d+)$", text.strip().lower())
+    if not match:
+        return False
+
+    action = match.group(1)
+    index = int(match.group(2)) - 1
+    ids = context.user_data.get("lista_lembretes_recente") or []
+
+    if not ids:
+        await update.message.reply_text(
+            "Não tenho uma lista recente de lembretes. Use /lembretes primeiro."
+        )
+        return True
+
+    if index < 0 or index >= len(ids):
+        await update.message.reply_text(
+            "Número inválido. Use /lembretes para ver a lista atualizada."
+        )
+        return True
+
+    task_id = ids[index]
+
+    if not action:
+        await update.message.reply_text(
+            f"Você escolheu o lembrete {index + 1}.\n"
+            f"Agora digite `apagar {index + 1}` ou `mudar {index + 1}`.",
+            parse_mode="Markdown",
+        )
+        return True
+
+    if action in {"apagar", "deletar"}:
+        deleted = deactivate_reminder_task(chat_id, task_id)
+        if not deleted:
+            await update.message.reply_text(
+                "Não consegui apagar esse lembrete. Use /lembretes e tente novamente."
+            )
+            return True
+
+        new_ids = [rid for rid in ids if rid != task_id]
+        if new_ids:
+            context.user_data["lista_lembretes_recente"] = new_ids
+        else:
+            context.user_data.pop("lista_lembretes_recente", None)
+
+        await update.message.reply_text("✅ Lembrete removido com sucesso!")
+        return True
+
+    if action in {"mudar", "modificar"}:
+        context.user_data["awaiting"] = "edit_reminder_schedule"
+        context.user_data["editing_task_id"] = task_id
+        await update.message.reply_text(
+            "Perfeito. Me diga como você quer alterar esse lembrete.\n"
+            "Exemplo: `quero todo dia às 19:00` ou `mudar para segunda e sexta às 08:30`.",
+            parse_mode="Markdown",
+        )
+        return True
+
+    return False
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text = update.message.text.strip()
         chat_id = update.effective_chat.id
         awaiting = context.user_data.get("awaiting")
+
+        if awaiting == "edit_reminder_schedule":
+            task_id = context.user_data.get("editing_task_id")
+            if not task_id:
+                context.user_data.pop("awaiting", None)
+                await update.message.reply_text(
+                    "Não encontrei o lembrete em edição. Use /lembretes novamente."
+                )
+                return
+
+            aguarde = await update.message.reply_text("✍️ Ajustando lembrete...")
+            profile = get_profile(chat_id)
+            history = get_history(chat_id)
+            result = process_message(text, history, profile)
+
+            current_task = get_reminder_task_by_id(chat_id, task_id)
+            if not current_task:
+                context.user_data.pop("awaiting", None)
+                context.user_data.pop("editing_task_id", None)
+                await aguarde.edit_text(
+                    "Não achei esse lembrete. Use /lembretes para recarregar sua lista."
+                )
+                return
+
+            reminder = result.get("reminder") or {}
+            if not reminder.get("message"):
+                reminder["message"] = current_task["message"]
+
+            logic_code = result.get("logic_code")
+            translated = _translate_logic_code(logic_code, reminder, profile)
+            if not translated:
+                await aguarde.edit_text(
+                    "Não consegui entender o novo formato desse lembrete.\n"
+                    "Tente algo como: `todo dia às 19:00` ou `segunda e sexta às 08:30`."
+                )
+                return
+
+            changed = update_reminder_task_schedule(
+                user_id=chat_id,
+                task_id=task_id,
+                kind=translated["kind"],
+                message=translated["message"],
+                schedule_code=translated["schedule_code"],
+                recurrence_rule=translated["recurrence_rule"],
+                timezone_name=translated["timezone"],
+                next_run_at=translated["next_run_at"],
+            )
+            if not changed:
+                await aguarde.edit_text(
+                    "Não consegui atualizar esse lembrete agora. Tente de novo com /lembretes."
+                )
+                return
+
+            context.user_data.pop("awaiting", None)
+            context.user_data.pop("editing_task_id", None)
+            await aguarde.edit_text(
+                "✅ Lembrete atualizado com sucesso!\n"
+                f"Novo horário: *{translated['display_run_at']}* ({translated['timezone']}).",
+                parse_mode="Markdown",
+            )
+            return
 
         if awaiting == "ia_model":
             selected_model = resolve_ai_model_choice(text)
@@ -89,6 +358,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        handled_menu_action = await _handle_reminder_menu_action(update, context, chat_id, text)
+        if handled_menu_action:
+            return
+
         # ── Conversa com IA ───────────────────────────────────
         aguarde = await update.message.reply_text("✍️ Pensando...")
 
@@ -117,6 +390,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Salva lembrete se detectado
         reminder = result.get("reminder")
+        logic_code = result.get("logic_code")
+
+        if logic_code:
+            task = _translate_logic_code(logic_code, reminder, profile)
+            if task:
+                try:
+                    save_reminder_task(
+                        user_id=chat_id,
+                        kind=task["kind"],
+                        message=task["message"],
+                        schedule_code=task["schedule_code"],
+                        recurrence_rule=task["recurrence_rule"],
+                        next_run_at=task["next_run_at"],
+                        timezone=task["timezone"],
+                    )
+                    tipo = "recorrente" if task["kind"] == "LR" else "único"
+                    resposta = (
+                        f"{result['reply']}\n\n"
+                        f"✅ Lembrete {tipo} salvo para *{task['display_run_at']}* ({task['timezone']})."
+                    )
+                    await aguarde.edit_text(resposta, parse_mode="Markdown")
+                    return
+                except Exception:
+                    logger.exception("Falha ao salvar reminder_tasks.")
+
         if reminder:
             try:
                 save_reminder(chat_id, reminder["message"], reminder["remind_at"])
