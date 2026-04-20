@@ -76,9 +76,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting", None)
     await update.message.reply_text(
         "Oi! Sou a *TELia*, sua assistente pessoal com IA.\n\n"
-        "Para começar, crie sua conta com /cadastrar ou entre com /login.\n"
-        "Quando quiser sair da sessão, use /sair.\n"
-        "Para saber mais, use /ajuda." + MSG_GITHUB,
+        "*Menu inicial de comandos:*\n"
+        "/start — abre este menu inicial\n"
+        "/cadastrar — criar nova conta\n"
+        "/login — entrar na conta\n"
+        "/sair — encerrar sessão\n"
+        "/lembretes — listar, apagar ou mudar lembretes\n"
+        "/ia — escolher o modelo de IA da sua conta\n"
+        "/timezone — definir seu fuso horário\n"
+        "/ajuda ou /help — ver explicações completas\n\n"
+        "Dica: depois do login, é só conversar normalmente comigo."
+        + MSG_GITHUB,
         parse_mode="Markdown",
     )
 
@@ -114,6 +122,8 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ia — escolher modelo de IA\n"
         "/lembretes — listar, apagar ou mudar lembretes\n"
         "/timezone — definir seu fuso horario\n"
+        "/start — abrir o menu inicial\n"
+        "/help — atalho para /ajuda\n"
         "/ajuda — esta mensagem" + MSG_GITHUB,
         parse_mode="Markdown",
     )

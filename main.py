@@ -1,6 +1,7 @@
 import logging
 from dotenv import load_dotenv
 import os
+from telegram import BotCommand
 
 from telegram.ext import (
     ApplicationBuilder,
@@ -33,9 +34,25 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
+
+async def _post_init(app):
+    await app.bot.set_my_commands(
+        [
+            BotCommand("start", "menu inicial"),
+            BotCommand("cadastrar", "criar nova conta"),
+            BotCommand("login", "entrar na conta"),
+            BotCommand("sair", "encerrar sessão"),
+            BotCommand("lembretes", "listar e gerenciar lembretes"),
+            BotCommand("ia", "escolher modelo de IA"),
+            BotCommand("timezone", "configurar fuso horário"),
+            BotCommand("ajuda", "ver ajuda completa"),
+            BotCommand("help", "atalho para ajuda"),
+        ]
+    )
+
 def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(token).post_init(_post_init).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
