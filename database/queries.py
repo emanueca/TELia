@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import time
 from database.connection import get_connection
 
 _schema_cache: dict[tuple[str, str], bool] = {}
@@ -52,6 +53,13 @@ def _column_exists(cursor, table_name: str, column_name: str) -> bool:
 
 # ── Usuários ──────────────────────────────────────────────
 
+def _new_user_id(cursor) -> int:
+    while True:
+        candidate = int(time.time_ns())
+        cursor.execute("SELECT COUNT(1) FROM users WHERE chat_id = %s", (candidate,))
+        if _count_from_row(cursor.fetchone()) == 0:
+            return candidate
+
 def verificar_login(email: str, senha_hash: str) -> dict | None:
     """Returns the user row if email+password match, else None."""
     conn = get_connection()
@@ -81,7 +89,50 @@ def email_existe(email: str) -> bool:
 def get_usuario(chat_id: int) -> dict | None:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-    if _table_exists(cursor, "users"):
+    if _table_exists(cursor, "users") and _table_exists(cursor, "chat_sessions"):
+        cursor.execute(
+            """
+            SELECT
+                u.chat_id,
+                u.email,
+                u.password_hash AS senha_hash,
+                u.is_logged_in AS logado,
+                u.created_at
+            FROM users u
+            INNER JOIN chat_sessions cs ON cs.user_id = u.chat_id
+            WHERE cs.chat_id = %s
+            """,
+            (chat_id,),
+        )
+        usuario = cursor.fetchone()
+
+        # Compatibilidade com sessão antiga: usa registro legado quando aplicável.
+        if not usuario:
+            cursor.execute(
+                """
+                SELECT
+                    chat_id,
+                    email,
+                    password_hash AS senha_hash,
+                    is_logged_in AS logado,
+                    created_at
+                FROM users
+                WHERE chat_id = %s
+                """,
+                (chat_id,),
+            )
+            usuario = cursor.fetchone()
+            if usuario:
+                cursor.execute(
+                    """
+                    INSERT INTO chat_sessions (chat_id, user_id)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)
+                    """,
+                    (chat_id, usuario["chat_id"]),
+                )
+                conn.commit()
+    elif _table_exists(cursor, "users"):
         cursor.execute(
             """
             SELECT
@@ -95,6 +146,7 @@ def get_usuario(chat_id: int) -> dict | None:
             """,
             (chat_id,),
         )
+        usuario = cursor.fetchone()
     elif _table_exists(cursor, "usuarios"):
         cursor.execute(
             """
@@ -109,12 +161,12 @@ def get_usuario(chat_id: int) -> dict | None:
             """,
             (chat_id,),
         )
+        usuario = cursor.fetchone()
     else:
         cursor.close()
         conn.close()
         return None
 
-    usuario = cursor.fetchone()
     cursor.close()
     conn.close()
     return usuario
@@ -122,7 +174,24 @@ def get_usuario(chat_id: int) -> dict | None:
 def criar_usuario(chat_id: int, email: str, senha_hash: str):
     conn = get_connection()
     cursor = conn.cursor()
-    if _table_exists(cursor, "users"):
+    if _table_exists(cursor, "users") and _table_exists(cursor, "chat_sessions"):
+        user_id = _new_user_id(cursor)
+        cursor.execute(
+            """
+            INSERT INTO users (chat_id, email, password_hash, is_logged_in)
+            VALUES (%s, %s, %s, TRUE)
+            """,
+            (user_id, email, senha_hash),
+        )
+        cursor.execute(
+            """
+            INSERT INTO chat_sessions (chat_id, user_id)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)
+            """,
+            (chat_id, user_id),
+        )
+    elif _table_exists(cursor, "users"):
         cursor.execute(
             """
             INSERT INTO users (chat_id, email, password_hash, is_logged_in)
@@ -144,17 +213,44 @@ def criar_usuario(chat_id: int, email: str, senha_hash: str):
     cursor.close()
     conn.close()
 
-def set_logado(chat_id: int, logado: bool):
+def set_logado(user_id: int, logado: bool):
     conn = get_connection()
     cursor = conn.cursor()
     if _table_exists(cursor, "users"):
         cursor.execute(
-            "UPDATE users SET is_logged_in = %s WHERE chat_id = %s", (logado, chat_id)
+            "UPDATE users SET is_logged_in = %s WHERE chat_id = %s", (logado, user_id)
         )
     else:
         cursor.execute(
-            "UPDATE usuarios SET logado = %s WHERE chat_id = %s", (logado, chat_id)
+            "UPDATE usuarios SET logado = %s WHERE chat_id = %s", (logado, user_id)
         )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def set_chat_session(chat_id: int, user_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    if _table_exists(cursor, "chat_sessions"):
+        cursor.execute(
+            """
+            INSERT INTO chat_sessions (chat_id, user_id)
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)
+            """,
+            (chat_id, user_id),
+        )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def clear_chat_session(chat_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    if _table_exists(cursor, "chat_sessions"):
+        cursor.execute("DELETE FROM chat_sessions WHERE chat_id = %s", (chat_id,))
     conn.commit()
     cursor.close()
     conn.close()
@@ -196,7 +292,7 @@ def get_pending_reminders() -> list[dict]:
                     """
                     SELECT
                         id,
-                        user_id AS chat_id,
+                        user_id,
                         message,
                         remind_at,
                         sent
@@ -234,6 +330,38 @@ def get_pending_reminders() -> list[dict]:
                 (now,),
             )
         reminders = cursor.fetchall()
+        if reminders and _table_exists(cursor, "chat_sessions"):
+            user_ids = [row["user_id"] for row in reminders if row.get("user_id") is not None]
+            if user_ids:
+                placeholders = ",".join(["%s"] * len(user_ids))
+                cursor.execute(
+                    f"""
+                    SELECT cs.user_id, cs.chat_id
+                    FROM chat_sessions cs
+                    INNER JOIN (
+                        SELECT user_id, MAX(updated_at) AS max_updated
+                        FROM chat_sessions
+                        WHERE user_id IN ({placeholders})
+                        GROUP BY user_id
+                    ) latest
+                        ON latest.user_id = cs.user_id
+                       AND latest.max_updated = cs.updated_at
+                    """,
+                    tuple(user_ids),
+                )
+                session_rows = cursor.fetchall()
+                chat_by_user = {row["user_id"]: row["chat_id"] for row in session_rows}
+                reminders = [
+                    {
+                        "id": row["id"],
+                        "chat_id": chat_by_user.get(row["user_id"]),
+                        "message": row["message"],
+                        "remind_at": row["remind_at"],
+                        "sent": row["sent"],
+                    }
+                    for row in reminders
+                    if chat_by_user.get(row["user_id"]) is not None
+                ]
         cursor.close()
         return reminders
     finally:
@@ -277,27 +405,59 @@ def get_due_reminder_tasks(limit: int = 100) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute(
-        """
-        SELECT
-            id,
-            user_id AS chat_id,
-            kind,
-            message,
-            schedule_code,
-            recurrence_rule,
-            timezone,
-            next_run_at,
-            last_sent_at,
-            active
-        FROM reminder_tasks
-        WHERE active = TRUE
-          AND next_run_at <= %s
-        ORDER BY next_run_at ASC
-        LIMIT %s
-        """,
-        (now, limit),
-    )
+    if _table_exists(cursor, "chat_sessions"):
+        cursor.execute(
+            """
+            SELECT
+                rt.id,
+                cs.chat_id,
+                rt.kind,
+                rt.message,
+                rt.schedule_code,
+                rt.recurrence_rule,
+                rt.timezone,
+                rt.next_run_at,
+                rt.last_sent_at,
+                rt.active
+            FROM reminder_tasks rt
+            INNER JOIN (
+                SELECT user_id, MAX(updated_at) AS max_updated
+                FROM chat_sessions
+                GROUP BY user_id
+            ) latest
+                ON latest.user_id = rt.user_id
+            INNER JOIN chat_sessions cs
+                ON cs.user_id = latest.user_id
+               AND cs.updated_at = latest.max_updated
+            WHERE rt.active = TRUE
+              AND rt.next_run_at <= %s
+            ORDER BY rt.next_run_at ASC
+            LIMIT %s
+            """,
+            (now, limit),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT
+                id,
+                user_id AS chat_id,
+                kind,
+                message,
+                schedule_code,
+                recurrence_rule,
+                timezone,
+                next_run_at,
+                last_sent_at,
+                active
+            FROM reminder_tasks
+            WHERE active = TRUE
+              AND next_run_at <= %s
+            ORDER BY next_run_at ASC
+            LIMIT %s
+            """,
+            (now, limit),
+        )
     rows = cursor.fetchall()
     cursor.close()
     conn.close()

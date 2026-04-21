@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS users (
 	created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Sessão ativa por chat do Telegram
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    chat_id BIGINT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+    INDEX idx_chat_sessions_user (user_id)
+);
+
 -- Reminders
 CREATE TABLE IF NOT EXISTS reminders (
 	id INT AUTO_INCREMENT PRIMARY KEY,

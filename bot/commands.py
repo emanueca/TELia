@@ -203,7 +203,8 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    profile = get_profile(chat_id)
+    user_id = usuario["chat_id"]
+    profile = get_profile(user_id)
     atual = profile.get("timezone", "America/Sao_Paulo")
     context.user_data["awaiting"] = "timezone_select"
 
@@ -244,7 +245,8 @@ async def lembretes(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    tasks = get_active_reminder_tasks(chat_id)
+    user_id = usuario["chat_id"]
+    tasks = get_active_reminder_tasks(user_id)
     if not tasks:
         context.user_data.pop("lista_lembretes_recente", None)
         await update.message.reply_text(
@@ -287,7 +289,7 @@ async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("timezone:set:"):
         tz = data.split(":", 2)[2]
-        upsert_profile(chat_id, "timezone", tz)
+        upsert_profile(usuario["chat_id"], "timezone", tz)
         context.user_data.pop("awaiting", None)
         await query.edit_message_text(
             f"✅ Fuso horário atualizado para: {tz}.\n"
@@ -355,7 +357,7 @@ async def timezone_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    upsert_profile(chat_id, "timezone", tz)
+    upsert_profile(usuario["chat_id"], "timezone", tz)
     context.user_data.pop("awaiting", None)
     await update.message.reply_text(
         f"✅ Fuso detectado automaticamente: {tz}.\n"
@@ -391,7 +393,7 @@ async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    from database.queries import get_usuario, set_logado
+    from database.queries import get_usuario, set_logado, clear_chat_session
 
     chat_id = update.effective_chat.id
     usuario = get_usuario(chat_id)
@@ -405,7 +407,8 @@ async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    set_logado(chat_id, False)
+    set_logado(usuario["chat_id"], False)
+    clear_chat_session(chat_id)
     await update.message.reply_text(
         "Sessão encerrada com sucesso. Até logo! 👋\n"
         "Quando quiser voltar, use /login."

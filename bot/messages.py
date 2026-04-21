@@ -13,6 +13,7 @@ from database.queries import (
     verificar_login,
     email_existe,
     set_logado,
+    set_chat_session,
     save_reminder,
     save_reminder_task,
     get_reminder_task_by_id,
@@ -293,6 +294,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text.strip()
         chat_id = update.effective_chat.id
         awaiting = context.user_data.get("awaiting")
+        usuario = None
+        user_id = None
+
+        if awaiting in {"edit_reminder_schedule", "ia_model"}:
+            usuario = get_usuario(chat_id)
+            if not usuario or not usuario["logado"]:
+                context.user_data.pop("awaiting", None)
+                context.user_data.pop("editing_task_id", None)
+                await update.message.reply_text(
+                    "👋 Sua sessão expirou. Faça login novamente com /login."
+                )
+                return
+            user_id = usuario["chat_id"]
 
         if awaiting == "edit_reminder_schedule":
             task_id = context.user_data.get("editing_task_id")
@@ -305,8 +319,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             aguarde = await update.message.reply_text("✍️ Ajustando lembrete...")
             try:
-                profile = get_profile(chat_id)
-                history = get_history(chat_id)
+                profile = get_profile(user_id)
+                history = get_history(user_id)
                 result = process_message(text, history, profile)
             except Exception:
                 logger.exception("Falha ao processar edição de lembrete com IA.")
@@ -315,7 +329,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            current_task = get_reminder_task_by_id(chat_id, task_id)
+            current_task = get_reminder_task_by_id(user_id, task_id)
             if not current_task:
                 context.user_data.pop("awaiting", None)
                 context.user_data.pop("editing_task_id", None)
@@ -345,7 +359,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             changed = update_reminder_task_schedule(
-                user_id=chat_id,
+                user_id=user_id,
                 task_id=task_id,
                 kind=translated["kind"],
                 message=translated["message"],
@@ -377,7 +391,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Exemplos válidos: 1, 2, 3, 4, gemini-2.0-flash"
                 )
                 return
-            upsert_profile(chat_id, "ai_model", selected_model)
+            upsert_profile(user_id, "ai_model", selected_model)
             context.user_data.pop("awaiting", None)
             await update.message.reply_text(
                 f"✅ Modelo da sua conta atualizado para: {selected_model}."
@@ -414,7 +428,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        handled_menu_action = await _handle_reminder_menu_action(update, context, chat_id, text)
+        user_id = usuario["chat_id"]
+
+        handled_menu_action = await _handle_reminder_menu_action(update, context, user_id, text)
         if handled_menu_action:
             return
 
@@ -422,8 +438,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         aguarde = await update.message.reply_text("✍️ Pensando...")
 
         try:
-            history = get_history(chat_id)
-            profile = get_profile(chat_id)
+            history = get_history(user_id)
+            profile = get_profile(user_id)
             result = process_message(text, history, profile)
         except Exception:
             logger.exception("Falha na chamada ao Gemini.")
@@ -432,15 +448,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Salva a troca no histórico
         try:
-            save_message(chat_id, "user", text)
-            save_message(chat_id, "assistant", result["reply"])
+            save_message(user_id, "user", text)
+            save_message(user_id, "assistant", result["reply"])
         except Exception:
             logger.exception("Falha ao salvar histórico.")
 
         # Salva atualizações de perfil detectadas pela IA
         for update_item in result.get("profile_updates") or []:
             try:
-                upsert_profile(chat_id, update_item["key"], update_item["value"])
+                upsert_profile(user_id, update_item["key"], update_item["value"])
             except Exception:
                 logger.exception("Falha ao salvar perfil.")
 
@@ -453,7 +469,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if task:
                 try:
                     save_reminder_task(
-                        user_id=chat_id,
+                        user_id=user_id,
                         kind=task["kind"],
                         message=task["message"],
                         schedule_code=task["schedule_code"],
@@ -473,7 +489,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if reminder:
             try:
-                save_reminder(chat_id, reminder["message"], reminder["remind_at"])
+                save_reminder(user_id, reminder["message"], reminder["remind_at"])
                 resposta = f"{result['reply']}\n\n✅ Lembrete salvo para *{reminder['remind_at']}*."
                 await aguarde.edit_text(resposta, parse_mode="Markdown")
             except Exception:
@@ -549,10 +565,8 @@ async def _processar_login(update: Update, context, chat_id: int, text: str):
         )
         return
 
-    # Garante login no chat atual e encerra eventual sessão antiga do mesmo e-mail.
-    if usuario["chat_id"] != chat_id:
-        set_logado(usuario["chat_id"], False)
-    set_logado(chat_id, True)
+    set_chat_session(chat_id, usuario["chat_id"])
+    set_logado(usuario["chat_id"], True)
     context.user_data.pop("awaiting", None)
     await update.message.reply_text(
         "✅ Login realizado com sucesso! Bem-vindo(a) de volta! 😊\n\n"
