@@ -17,6 +17,7 @@ from bot.commands import (
     cadastrar,
     login,
     sair,
+    reportar,
     ajuda,
     ia,
     lembretes,
@@ -42,6 +43,7 @@ async def _post_init(app):
             BotCommand("cadastrar", "criar nova conta"),
             BotCommand("login", "entrar na conta"),
             BotCommand("sair", "encerrar sessão"),
+            BotCommand("reportar", "relatar um problema"),
             BotCommand("lembretes", "listar e gerenciar lembretes"),
             BotCommand("ia", "escolher modelo de IA"),
             BotCommand("timezone", "configurar fuso horário"),
@@ -60,6 +62,7 @@ def main():
     app.add_handler(CommandHandler("cadastrar", cadastrar))
     app.add_handler(CommandHandler("login", login))
     app.add_handler(CommandHandler("sair", sair))
+    app.add_handler(CommandHandler("reportar", reportar))
     app.add_handler(CommandHandler("ia", ia))
     app.add_handler(CommandHandler("lembretes", lembretes))
     app.add_handler(CommandHandler("timezone", timezone_command))

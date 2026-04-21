@@ -14,6 +14,7 @@ from database.queries import (
     email_existe,
     set_logado,
     set_chat_session,
+    save_report,
     save_reminder_task,
     get_reminder_task_by_id,
     get_overdue_reminder_tasks,
@@ -24,7 +25,7 @@ from database.queries import (
     get_profile,
     upsert_profile,
 )
-from ai.gemini import process_message
+from ai.gemini import process_message, process_report_issue
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TZ = "America/Sao_Paulo"
@@ -68,6 +69,18 @@ def _parse_form(text: str) -> tuple[str, str] | None:
         return email, senha
     except Exception:
         return None
+
+
+def _normalize_reporter_name(text: str) -> tuple[str | None, bool]:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return None, True
+
+    lowered = cleaned.lower()
+    if cleaned == "..." or "..." in cleaned or lowered in {"anonimo", "anônimo", "anonymous", "anon"}:
+        return None, True
+
+    return cleaned, False
 
 
 def _to_datetime(value) -> datetime | None:
@@ -311,16 +324,75 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         usuario = None
         user_id = None
 
-        if awaiting in {"edit_reminder_schedule", "ia_model"}:
+        if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name"}:
             usuario = get_usuario(chat_id)
             if not usuario or not usuario["logado"]:
                 context.user_data.pop("awaiting", None)
                 context.user_data.pop("editing_task_id", None)
+                context.user_data.pop("report_draft", None)
                 await update.message.reply_text(
                     "👋 Sua sessão expirou. Faça login novamente com /login."
                 )
                 return
             user_id = usuario["chat_id"]
+
+        if awaiting == "report_issue":
+            aguarde = await update.message.reply_text("✍️ Analisando seu relato...")
+            try:
+                profile = get_profile(user_id)
+                ai_reply = process_report_issue(text, profile)
+            except Exception:
+                logger.exception("Falha ao processar relato com IA.")
+                ai_reply = (
+                    "Obrigado por ajudar a manter a comunidade em pé. "
+                    "Digite na próxima mensagem qual seu nome; se preferir, pode enviar '...' para ficar anônimo."
+                )
+
+            context.user_data["report_draft"] = {
+                "issue": text,
+                "ai_reply": ai_reply,
+            }
+            context.user_data["awaiting"] = "report_name"
+            await _safe_edit(aguarde, ai_reply)
+            await update.message.reply_text(
+                "Obrigado por ajudar a manter a comunidade em pé!!!\n"
+                "Digite na próxima mensagem qual seu nome, se preferir pode adicionar um '...' para enviar como anônimo."
+            )
+            return
+
+        if awaiting == "report_name":
+            report_draft = context.user_data.get("report_draft") or {}
+            issue = report_draft.get("issue")
+            ai_reply = report_draft.get("ai_reply")
+            if not issue or not ai_reply:
+                context.user_data.pop("awaiting", None)
+                context.user_data.pop("report_draft", None)
+                await update.message.reply_text(
+                    "Não encontrei o relato anterior. Use /reportar novamente para começar."
+                )
+                return
+
+            reporter_name, anonymous = _normalize_reporter_name(text)
+            try:
+                save_report(user_id, issue, ai_reply, reporter_name, anonymous)
+            except Exception:
+                logger.exception("Falha ao salvar report.")
+                await update.message.reply_text(
+                    "⚠️ Não consegui salvar seu relato agora. Tente novamente em instantes."
+                )
+                return
+
+            context.user_data.pop("awaiting", None)
+            context.user_data.pop("report_draft", None)
+            if anonymous:
+                await update.message.reply_text(
+                    "✅ Relato registrado como anônimo. Obrigado por ajudar a manter a comunidade em pé!"
+                )
+            else:
+                await update.message.reply_text(
+                    f"✅ Relato registrado, {reporter_name}. Obrigado por ajudar a manter a comunidade em pé!"
+                )
+            return
 
         if awaiting == "edit_reminder_schedule":
             task_id = context.user_data.get("editing_task_id")

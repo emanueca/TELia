@@ -84,6 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cadastrar — criar nova conta\n"
         "/login — entrar na conta\n"
         "/sair — encerrar sessão\n"
+        "/reportar — relatar um problema\n"
         "/lembretes — listar, apagar ou mudar lembretes\n"
         "/ia — escolher o modelo de IA da sua conta\n"
         "/timezone — definir seu fuso horário\n"
@@ -122,6 +123,7 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cadastrar — criar nova conta\n"
         "/login — entrar na conta\n"
         "/sair — encerrar sessão\n"
+        "/reportar — relatar um problema\n"
         "/ia — escolher modelo de IA\n"
         "/lembretes — listar, apagar ou mudar lembretes\n"
         "/timezone — definir seu fuso horario\n"
@@ -164,6 +166,26 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  📤 Resposta enviada para você\n"
         "```",
         parse_mode="Markdown",
+    )
+
+
+async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from database.queries import get_usuario
+
+    chat_id = update.effective_chat.id
+    usuario = get_usuario(chat_id)
+    if not usuario or not usuario["logado"]:
+        await update.message.reply_text(
+            "👋 Para relatar um problema, você precisa estar logado.\n"
+            "Use /login ou /cadastrar." + MSG_GITHUB
+        )
+        return
+
+    context.user_data["awaiting"] = "report_issue"
+    context.user_data.pop("report_draft", None)
+    await update.message.reply_text(
+        "Qual problema você está relatando?\n\n"
+        "Me descreva o que aconteceu e eu vou te ajudar a registrar isso." + MSG_GITHUB
     )
 
 
@@ -399,6 +421,7 @@ async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usuario = get_usuario(chat_id)
 
     context.user_data.pop("awaiting", None)
+    context.user_data.pop("report_draft", None)
 
     if not usuario or not usuario["logado"]:
         await update.message.reply_text(

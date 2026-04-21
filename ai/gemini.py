@@ -83,6 +83,20 @@ Responda APENAS com JSON válido, sem markdown nem texto fora do JSON.
 
 Mensagem do usuário: {user_message}"""
 
+_REPORT_PROMPT = """Você é a TELia, uma assistente pessoal no Telegram.
+Responda sempre em português brasileiro, de forma curta, acolhedora e objetiva.
+
+O usuário está relatando um problema da comunidade ou do sistema.
+Sua tarefa é apenas agradecer, confirmar que entendeu e pedir o nome na próxima mensagem.
+
+Regras:
+- Não tente resolver o problema agora.
+- Não use markdown.
+- Não use emojis em excesso.
+- Termine pedindo para a pessoa informar o nome ou escrever '...' para enviar como anônimo.
+
+Relato do usuário: {report_text}"""
+
 
 def _format_history(history: list[dict]) -> str:
     if not history:
@@ -301,3 +315,24 @@ def process_message(
             "profile_updates": [],
             "logic_code": None,
         }
+
+
+def process_report_issue(report_text: str, profile: dict | None = None) -> str:
+    try:
+        if not os.getenv("GEMINI_API_KEY"):
+            raise RuntimeError("GEMINI_API_KEY não configurada")
+
+        prompt = _REPORT_PROMPT.format(report_text=report_text)
+        preferred_model = _get_selected_model(profile or {})
+        selected_model = _resolve_available_model(preferred_model)
+        response = _get_model(selected_model).generate_content(prompt)
+        raw = (response.text or "").strip()
+        if not raw:
+            raise ValueError("resposta vazia do Gemini")
+        return raw
+    except Exception:
+        logger.exception("Falha ao processar relato com Gemini.")
+        return (
+            "Obrigado por ajudar a manter a comunidade em pé. "
+            "Digite na próxima mensagem qual seu nome; se preferir, pode enviar '...' para ficar anônimo."
+        )

@@ -98,6 +98,21 @@ def init_db():
     """)
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reports (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            issue TEXT NOT NULL,
+            ai_reply TEXT NOT NULL,
+            reporter_name VARCHAR(255) NULL,
+            anonymous BOOLEAN NOT NULL DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+            INDEX idx_reports_user_id (user_id)
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_profile (
             id         INT AUTO_INCREMENT PRIMARY KEY,
             user_id    BIGINT NOT NULL,

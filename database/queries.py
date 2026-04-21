@@ -255,6 +255,21 @@ def clear_chat_session(chat_id: int):
     cursor.close()
     conn.close()
 
+
+def save_report(user_id: int, issue: str, ai_reply: str, reporter_name: str | None, anonymous: bool):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO reports (user_id, issue, ai_reply, reporter_name, anonymous)
+        VALUES (%s, %s, %s, %s, %s)
+        """,
+        (user_id, issue, ai_reply, reporter_name, anonymous),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
 def save_reminder_task(
     user_id: int,
     kind: str,
