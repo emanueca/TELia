@@ -598,6 +598,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if handled_menu_action:
             return
 
+        if context.chat_data.get("ai_processing"):
+            aviso = await update.message.reply_text(
+                "⏳ Ainda estou finalizando seu pedido anterior. Aguarde alguns segundos e tente novamente."
+            )
+            _remember_chat_message(context, aviso.message_id)
+            return
+
+        context.chat_data["ai_processing"] = True
+
         # ── Conversa com IA ───────────────────────────────────
         aguarde = await update.message.reply_text("✍️ Cozinhando.")
         _remember_chat_message(context, aguarde.message_id)
@@ -647,6 +656,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 thinking_task.cancel()
                 with suppress(Exception):
                     await thinking_task
+            context.chat_data["ai_processing"] = False
 
         # Salva a troca no histórico
         try:
