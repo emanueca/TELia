@@ -15,6 +15,7 @@ from database.queries import (
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TZ = "America/Sao_Paulo"
+_scheduler: BackgroundScheduler | None = None
 _DAY_TO_WEEKDAY = {
     "MON": 0,
     "TUE": 1,
@@ -24,6 +25,26 @@ _DAY_TO_WEEKDAY = {
     "SAT": 5,
     "SUN": 6,
 }
+
+
+def _get_app_loop(app):
+    updater = getattr(app, "updater", None)
+    loop = getattr(updater, "event_loop", None) if updater else None
+    if loop and not loop.is_closed():
+        return loop
+    return None
+
+
+def _send_message_sync(app, chat_id: int, text: str):
+    loop = _get_app_loop(app)
+    if not loop:
+        raise RuntimeError("Event loop do bot indisponível no momento")
+
+    future = asyncio.run_coroutine_threadsafe(
+        app.bot.send_message(chat_id=chat_id, text=text),
+        loop,
+    )
+    future.result(timeout=20)
 
 
 def _to_datetime(value) -> datetime | None:
@@ -119,29 +140,30 @@ def _next_run_for_task(task: dict) -> str | None:
 
 def _check_reminders(app):
     try:
+        logger.info("[scheduler] Verificando lembretes pendentes...")
+
         reminders = get_pending_reminders()
+        sent_legacy = 0
         for reminder in reminders:
             try:
-                asyncio.run_coroutine_threadsafe(
-                    app.bot.send_message(
-                        chat_id=reminder["chat_id"],
-                        text=f"Lembrete: {reminder['message']}",
-                    ),
-                    app.updater.event_loop,
+                _send_message_sync(
+                    app,
+                    reminder["chat_id"],
+                    f"Lembrete: {reminder['message']}",
                 )
                 mark_as_sent(reminder["id"])
+                sent_legacy += 1
             except Exception as e:
                 logger.exception(f"Erro ao enviar lembrete {reminder['id']}: {e}")
 
         tasks = get_due_reminder_tasks()
+        sent_tasks = 0
         for task in tasks:
             try:
-                asyncio.run_coroutine_threadsafe(
-                    app.bot.send_message(
-                        chat_id=task["chat_id"],
-                        text=f"Lembrete: {task['message']}",
-                    ),
-                    app.updater.event_loop,
+                _send_message_sync(
+                    app,
+                    task["chat_id"],
+                    f"Lembrete: {task['message']}",
                 )
 
                 if task.get("kind") == "LU":
@@ -152,13 +174,29 @@ def _check_reminders(app):
                         mark_reminder_task_sent(task["id"], next_run_at=next_run_at)
                     else:
                         mark_reminder_task_sent(task["id"], deactivate=True)
+                sent_tasks += 1
             except Exception as e:
                 logger.exception(f"Erro ao enviar reminder_task {task['id']}: {e}")
+
+        logger.info(
+            "[scheduler] Ciclo concluído. legacy_due=%s sent_legacy=%s tasks_due=%s sent_tasks=%s",
+            len(reminders),
+            sent_legacy,
+            len(tasks),
+            sent_tasks,
+        )
     except Exception as e:
         logger.exception(f"Erro ao verificar lembretes: {e}")
 
 def start_scheduler(app):
+    global _scheduler
+
     init_db()
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(_check_reminders, "interval", seconds=30, args=[app])
-    scheduler.start()
+    if _scheduler and _scheduler.running:
+        logger.info("[scheduler] Já está em execução. Ignorando nova inicialização.")
+        return
+
+    _scheduler = BackgroundScheduler()
+    _scheduler.add_job(_check_reminders, "interval", seconds=30, args=[app], max_instances=1)
+    _scheduler.start()
+    logger.info("[scheduler] Iniciado com intervalo de 30s.")
