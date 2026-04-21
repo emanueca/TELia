@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TELia — Painel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:        #0f0f0f;
+    --surface:   #181818;
+    --surface2:  #212121;
+    --border:    #2a2a2a;
+    --border2:   #383838;
+    --text:      #e8e8e8;
+    --text-muted:#888888;
+    --text-dim:  #555555;
+    --terra:     #c16048;
+    --terra-mid: #8a4232;
+    --terra-dim: #2e1a14;
+  }
+  html, body, #root { height: 100%; background: var(--bg); color: var(--text);
+    font-family: 'DM Sans', sans-serif; -webkit-font-smoothing: antialiased; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes scaleIn {
+    from { opacity: 0; transform: scale(0.97); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const { useState, useEffect, useRef } = React;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOCK DATA
+// ─────────────────────────────────────────────────────────────────────────────
+const SEED_REMINDERS = [
+{ id: "task_001", kind: "LR", description: "Tomar remédio para pressão", message: "Hora do remédio! Captopril 25mg — não esquecer em jejum 💊", type: "recurring", cron: "diário às 08:00", next_trigger: "2026-04-22T08:00:00", last_triggered: "2026-04-21T08:03:12", active: true, created_at: "2026-03-10T14:22:00", notes: "Captopril 25mg — não esquecer em jejum" },
+{ id: "task_002", kind: "LU", description: "Ligar para o dentista e remarcar consulta", message: "Lembra de ligar pro dentista hoje e remarcar a consulta.", type: "once", cron: null, next_trigger: "2026-04-22T10:00:00", last_triggered: null, active: true, created_at: "2026-04-20T09:11:00", notes: null },
+{ id: "task_003", kind: "LR", description: "Reunião com equipe de desenvolvimento", message: "Reunião com a equipe em 15 minutos. Atualiza o status do TELia antes.", type: "recurring", cron: "toda segunda às 14:00", next_trigger: "2026-04-27T14:00:00", last_triggered: "2026-04-20T14:00:00", active: true, created_at: "2026-04-01T08:00:00", notes: "Atualizar o status do projeto TELia" },
+{ id: "task_004", kind: "LR", description: "Pagar fatura do cartão", message: "Fatura do cartão vence hoje! Não esquece de pagar.", type: "recurring", cron: "todo dia 10", next_trigger: "2026-05-10T09:00:00", last_triggered: "2026-04-10T09:02:44", active: true, created_at: "2026-01-15T10:00:00", notes: null },
+{ id: "task_005", kind: "LU", description: "Revisão do código do módulo gemini.py", message: "Revisa o gemini.py — foco no retry loop e tratamento de erros.", type: "once", cron: null, next_trigger: "2026-04-21T16:00:00", last_triggered: null, active: false, created_at: "2026-04-19T11:30:00", notes: "Verificar tratamento de erros no retry loop" },
+{ id: "task_006", kind: "LR", description: "Beber água — 8 copos por dia", message: "Bebe água! Você já tomou esse copo?", type: "recurring", cron: "a cada 2h das 08:00 às 22:00", next_trigger: "2026-04-21T18:00:00", last_triggered: "2026-04-21T16:00:04", active: true, created_at: "2026-04-05T07:45:00", notes: null },
+{ id: "task_007", kind: "LR", description: "Backup do banco de dados de produção", message: "Backup automático iniciado. Verifica integridade e confirma envio pro S3.", type: "recurring", cron: "todo domingo às 03:00", next_trigger: "2026-04-26T03:00:00", last_triggered: "2026-04-19T03:00:00", active: true, created_at: "2026-02-28T00:00:00", notes: "Salvar em S3 e verificar integridade" }];
+
+
+const SEED_SESSIONS = [
+{
+  id: "sess_001",
+  date: "2026-04-21T01:09:00",
+  msg_count: 6,
+  keywords: ["nome", "apresentação", "primeiro contato"],
+  preview: "Ainda não sei o seu nome! Como posso te chamar?",
+  messages: [
+  { id: "m1", role: "user", content: "você sabe meu nome?", ts: "2026-04-21T01:09:47" },
+  { id: "m2", role: "assistant", content: "Ainda não sei o seu nome! Como posso te chamar?", ts: "2026-04-21T01:09:47" },
+  { id: "m3", role: "user", content: "Emanuel", ts: "2026-04-21T01:10:02" },
+  { id: "m4", role: "assistant", content: "Prazer em te conhecer, Emanuel! Como posso te ajudar hoje?", ts: "2026-04-21T01:10:02" }]
+
+},
+{
+  id: "sess_002",
+  date: "2026-04-21T01:11:00",
+  msg_count: 4,
+  keywords: ["lembrete", "água", "tomar", "agendamento"],
+  preview: "Me ajuda a lembrar que amanhã às 08:00 preciso tomar água.",
+  messages: [
+  { id: "m5", role: "user", content: "Me ajuda a lembrar que amanhã às 08:00 preciso tomar água, mas não sei o horário", ts: "2026-04-21T01:11:49" },
+  { id: "m6", role: "assistant", content: "Com certeza, Emanuel! Já anotei aqui — lembrete criado para amanhã às 08:00: 'tomar água'.", ts: "2026-04-21T01:11:49" },
+  { id: "m7", role: "user", content: "qual o horário?", ts: "2026-04-21T01:38:29" },
+  { id: "m8", role: "assistant", content: "Agora são 22:38, Emanuel! Precisa de mais alguma coisa?", ts: "2026-04-21T01:38:29" }]
+
+},
+{
+  id: "sess_003",
+  date: "2026-04-21T01:38:00",
+  msg_count: 4,
+  keywords: ["remédio", "captopril", "desculpa", "esquecimento"],
+  preview: "Poxa, Emanuel, me desculpa pela falha no lembrete do remédio.",
+  messages: [
+  { id: "m9", role: "user", content: "você me mandou segunda feira às 08:00 algo?", ts: "2026-04-21T01:38:58" },
+  { id: "m10", role: "assistant", content: "Poxa, Emanuel, me desculpa pela falha — o lembrete do remédio deveria ter disparado. Vou revisar.", ts: "2026-04-21T01:38:59" }]
+
+},
+{
+  id: "sess_004",
+  date: "2026-04-21T13:18:00",
+  msg_count: 6,
+  keywords: ["segunda-feira", "reunião", "lembrete recorrente", "equipe"],
+  preview: "Me lembra toda segunda-feira às 14h da reunião com a equipe.",
+  messages: [
+  { id: "m11", role: "user", content: "me lembra toda segunda feira às 14:00 da reunião com minha equipe de desenvolvimento", ts: "2026-04-21T13:18:23" },
+  { id: "m12", role: "assistant", content: "Pode deixar, Emanuel! Já anotei aqui — lembrete recorrente toda segunda às 14:00.", ts: "2026-04-21T13:18:24" },
+  { id: "m13", role: "user", content: "você sabe qual é seu nome?", ts: "2026-04-21T14:00:00" },
+  { id: "m14", role: "assistant", content: "Claro que sou o seu nome, Emanuel! Como eu — sou a TELia, sua assistente.", ts: "2026-04-21T14:00:00" }]
+
+},
+{
+  id: "sess_005",
+  date: "2026-04-21T14:06:00",
+  msg_count: 8,
+  keywords: ["identidade", "memória", "histórico", "conversa recente"],
+  preview: "A gente conversou sobre várias coisas — lembretes, seu nome, horários.",
+  messages: [
+  { id: "m15", role: "user", content: "qual meu nome?", ts: "2026-04-21T14:06:40" },
+  { id: "m16", role: "assistant", content: "Seu nome é Emanuel! Eu guardo isso pra você.", ts: "2026-04-21T14:06:40" },
+  { id: "m17", role: "user", content: "oque nós estavamos conversando", ts: "2026-04-21T14:07:29" },
+  { id: "m18", role: "assistant", content: "A gente conversou sobre várias coisas: seu nome, lembretes de água, remédio e reunião.", ts: "2026-04-21T14:07:29" },
+  { id: "m19", role: "user", content: "qual foi nossa conversa mais recente", ts: "2026-04-21T14:11:45" },
+  { id: "m20", role: "assistant", content: "Emanuel, a gente estava justamente conversando agora mesmo!", ts: "2026-04-21T14:11:45" }]
+
+},
+{
+  id: "sess_006",
+  date: "2026-04-21T14:47:00",
+  msg_count: 4,
+  keywords: ["saudação", "status", "sessão", "conta logada"],
+  preview: "Olá, Emanuel! Tudo bem por aí? Qual conta está logada?",
+  messages: [
+  { id: "m21", role: "user", content: "olá", ts: "2026-04-21T14:47:33" },
+  { id: "m22", role: "assistant", content: "Olá, Emanuel! Tudo bem por aí? Qualquer coisa é só falar.", ts: "2026-04-21T14:47:33" },
+  { id: "m23", role: "user", content: "qual conta estou logada?", ts: "2026-04-21T14:48:13" },
+  { id: "m24", role: "assistant", content: "Você está logado com a conta de Emanuel Ziegler Martins, user_id 1410285300.", ts: "2026-04-21T14:48:13" }]
+
+}];
+
+
+const SEED_PROFILE = {
+  nome: "",
+  telegram_id: "",
+  cidade: "Porto Alegre, RS",
+  profissao: "Desenvolvedor de Software",
+  timezone: "America/Sao_Paulo (UTC-3)",
+  modelo_ia: "gemini-1.5-pro",
+  idioma: "Português (BR)",
+  criado_em: "2026-01-15T10:00:00",
+  ultimo_acesso: "2026-04-21T10:30:14",
+  total_lembretes: 7,
+  total_mensagens: 10
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+function relTime(iso) {
+  if (!iso) return null;
+  const diff = new Date(iso) - Date.now(),abs = Math.abs(diff),past = diff < 0;
+  const m = Math.floor(abs / 60000),h = Math.floor(m / 60),d = Math.floor(h / 24);
+  const s = d ? `${d}d` : h ? `${h}h` : `${m}min`;
+  return past ? `${s} atrás` : `em ${s}`;
+}
+function statusOf(r) {
+  if (!r.active) return "inactive";
+  const diff = new Date(r.next_trigger) - Date.now();
+  if (diff < 0) return "overdue";
+  if (diff < 3 * 3600000) return "soon";
+  return "active";
+}
+const S = {
+  active: { label: "ativo", dot: "var(--terra)", text: "var(--terra)" },
+  soon: { label: "em breve", dot: "var(--terra)", text: "var(--terra)" },
+  overdue: { label: "atrasado", dot: "#e05c40", text: "#e05c40" },
+  inactive: { label: "inativo", dot: "var(--border2)", text: "var(--text-dim)" }
+};
+const FILTERS = [
+{ key: "all", label: "Todos" },
+{ key: "active", label: "Ativos" },
+{ key: "soon", label: "Em breve" },
+{ key: "overdue", label: "Atrasados" },
+{ key: "inactive", label: "Inativos" }];
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ICONS
+// ─────────────────────────────────────────────────────────────────────────────
+const ICO = {
+  bell: <><path d="M13.73 12A2 2 0 0 1 12 15a2 2 0 0 1-1.73-3" /><path d="M10 2a2 2 0 1 1 4 0v.09A7 7 0 0 1 19 9v3l2 2H3l2-2V9a7 7 0 0 1 5-6.91V2" /></>,
+  repeat: <><path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></>,
+  plus: <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>,
+  edit: <><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></>,
+  trash: <><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></>,
+  power: <><path d="M18.36 6.64A9 9 0 1 1 5.64 6.64" /><line x1="12" y1="2" x2="12" y2="12" /></>,
+  x: <><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></>,
+  check: <><polyline points="20 6 9 17 4 12" /></>,
+  filter: <><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></>,
+  history: <><polyline points="1 4 1 10 7 10" /><path d="M3.51 15a9 9 0 1 0 .49-5.22L1 10" /></>,
+  user: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>,
+  save: <><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></>,
+  chevron: <><polyline points="9 18 15 12 9 6" /></>
+};
+const Ic = ({ n, size = 15, color = "currentColor" }) =>
+<svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    {ICO[n]}
+  </svg>;
+
+
+const Mono = ({ children, style }) =>
+<span style={{ fontFamily: "'DM Mono',monospace", ...style }}>{children}</span>;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED BUTTON
+// ─────────────────────────────────────────────────────────────────────────────
+function GhostBtn({ icon, label, onClick, accent = "var(--text-muted)", style: s }) {
+  const [h, setH] = useState(false);
+  return (
+    <button onClick={onClick}
+    onMouseEnter={() => setH(true)} onMouseLeave={() => setH(false)}
+    style={{
+      display: "inline-flex", alignItems: "center", gap: 6,
+      fontSize: 12, color: h ? accent : "var(--text-dim)",
+      background: h ? accent + "18" : "transparent",
+      border: `1px solid ${h ? accent + "50" : "var(--border)"}`,
+      borderRadius: 6, padding: "5px 10px", cursor: "pointer",
+      transition: "all 0.15s", fontFamily: "'DM Sans',sans-serif", ...s
+    }}>
+      {icon && <Ic n={icon} size={13} color={h ? accent : "var(--text-dim)"} />}
+      {label}
+    </button>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WELCOME BANNER
+// ─────────────────────────────────────────────────────────────────────────────
+function WelcomeBanner({ onDismiss }) {
+  const [closing, setClosing] = useState(false);
+  const dismiss = () => {setClosing(true);setTimeout(onDismiss, 280);};
+
+  const steps = [
+  { n: "01", t: "Faça login", d: "Acesse com sua conta — sessão segura por user_id." },
+  { n: "02", t: "Converse com a IA", d: "Mande mensagem no Telegram; a IA entende o contexto." },
+  { n: "03", t: "Crie lembretes", d: "Únicos ou recorrentes, com o texto exato a enviar." },
+  { n: "04", t: "Edite no painel", d: "Ajuste mensagem, horário ou desative sem perder histórico." },
+  { n: "05", t: "Veja o histórico", d: "Acompanhe conversas e ajuste seu perfil quando quiser." }];
+
+  const features = [
+  { icon: "↻", label: "Lembretes recorrentes" },
+  { icon: "💬", label: "Histórico de conversas" },
+  { icon: "👤", label: "Perfil editável" },
+  { icon: "✦", label: "IA com memória" }];
+
+  const faq = [
+  { q: "Meus dados ficam seguros?", a: "Sim. Cada usuário acessa apenas seus próprios dados — filtrado por user_id." },
+  { q: "Posso editar um lembrete criado?", a: "Sim, clique em Editar em qualquer card para ajustar mensagem, horário ou recorrência." },
+  { q: "O que é o campo 'Lembrete:'?", a: "É o texto exato que o Telegram vai te mandar quando o lembrete disparar." },
+  { q: "Como acessar meu perfil?", a: "Clique no seu nome no cabeçalho ou acesse a aba Perfil diretamente." }];
+
+
+  return (
+    <div style={{
+      marginBottom: 20, background: "var(--surface)", border: "1px solid var(--border2)",
+      borderRadius: 12, overflow: "hidden",
+      opacity: closing ? 0 : 1,
+      transform: closing ? "translateY(-8px) scale(0.99)" : "translateY(0)",
+      transition: "opacity 0.28s, transform 0.28s",
+      animation: "fadeUp 0.35s ease both"
+    }}>
+      <div style={{ height: 2, background: "linear-gradient(90deg,var(--terra),transparent)" }} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr" }}>
+        {/* left */}
+        <div style={{
+          padding: "32px 36px", borderRight: "1px solid var(--border)",
+          display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 24
+        }}>
+          <div>
+            <div style={{
+              display: "inline-flex", alignItems: "center", gap: 7,
+              background: "var(--terra-dim)", borderRadius: 20, padding: "4px 12px", marginBottom: 18
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--terra)", display: "inline-block" }} />
+              <Mono style={{ fontSize: 10.5, color: "var(--terra)", letterSpacing: "0.07em", textTransform: "uppercase" }}>
+                TELia — Assistente inteligente
+              </Mono>
+            </div>
+            <h1 style={{ fontSize: 26, fontWeight: 700, lineHeight: 1.25, letterSpacing: "-0.02em", marginBottom: 12, textWrap: "pretty" }}>
+              Organize sua rotina<br />com lembretes<br />
+              <span style={{ color: "var(--terra)" }}>inteligentes</span>
+            </h1>
+            <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6, maxWidth: 300 }}>
+              Crie, edite e acompanhe tudo em um painel simples — integrado direto com sua IA no Telegram.
+            </p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button onClick={dismiss} style={{
+                display: "inline-flex", alignItems: "center", gap: 7,
+                background: "var(--terra)", color: "#fff",
+                border: "none", borderRadius: 8, padding: "10px 20px",
+                fontSize: 13.5, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans',sans-serif"
+              }}>Começar agora</button>
+              <button style={{
+                display: "inline-flex", alignItems: "center",
+                background: "transparent", color: "var(--text-muted)",
+                border: "1px solid var(--border2)", borderRadius: 8, padding: "10px 18px",
+                fontSize: 13.5, cursor: "pointer", fontFamily: "'DM Sans',sans-serif"
+              }}>Ver demonstração</button>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ display: "flex" }}>
+                  {["#c16048", "#9e4e3a", "#7a3c2c"].map((c, i) =>
+                  <div key={i} style={{ width: 22, height: 22, borderRadius: "50%", background: c, border: "2px solid var(--surface)", marginLeft: i ? -7 : 0 }} />
+                  )}
+                </div>
+                <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                  <span style={{ color: "var(--terra)", fontWeight: 600 }}>+1.200</span> lembretes esta semana
+                </span>
+              </div>
+              <button onClick={dismiss} style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 12, color: "var(--text-dim)", fontFamily: "'DM Sans',sans-serif",
+                textDecoration: "underline", textUnderlineOffset: 3
+              }}>Ignorar</button>
+            </div>
+          </div>
+        </div>
+        {/* right */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "24px 28px 20px", borderBottom: "1px solid var(--border)" }}>
+            <Mono style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 14 }}>Como funciona</Mono>
+            <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
+              {steps.map((s) =>
+              <div key={s.n} style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
+                  <Mono style={{ fontSize: 11, color: "var(--terra)", background: "var(--terra-dim)", borderRadius: 4, padding: "2px 7px", marginTop: 1, flexShrink: 0 }}>{s.n}</Mono>
+                  <span style={{ fontSize: 12.5 }}>
+                    <span style={{ fontWeight: 500 }}>{s.t} </span>
+                    <span style={{ color: "var(--text-dim)" }}>— {s.d}</span>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", flex: 1 }}>
+            <div style={{ padding: "18px 22px", borderRight: "1px solid var(--border)" }}>
+              <Mono style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 11 }}>Recursos</Mono>
+              <div style={{ display: "flex", flexDirection: "column", gap: 7, marginBottom: 18 }}>
+                {features.map((f) =>
+                <div key={f.label} style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <span style={{ fontSize: 13, width: 18, textAlign: "center", opacity: 0.7 }}>{f.icon}</span>
+                    <span style={{ fontSize: 12.5, color: "var(--text-muted)" }}>{f.label}</span>
+                  </div>
+                )}
+              </div>
+              <Mono style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 9 }}>Estados</Mono>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {[{ l: "Ativo", c: "var(--terra)" }, { l: "Em breve", c: "var(--terra)" }, { l: "Atrasado", c: "#e05c40" }, { l: "Inativo", c: "var(--text-dim)" }].map(({ l, c }) =>
+                <span key={l} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 9px", borderRadius: 20, background: "var(--surface2)", border: "1px solid var(--border)", color: c }}>
+                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: c }} />{l}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{ padding: "18px 22px" }}>
+              <Mono style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 11 }}>FAQ</Mono>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {faq.map(({ q, a }) =>
+                <div key={q}>
+                    <p style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 3 }}>{q}</p>
+                    <p style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>{a}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REMINDER CARD + MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+function ReminderCard({ r, onEdit, onDelete, onToggle, delay = 0 }) {
+  const [hov, setHov] = useState(false);
+  const st = statusOf(r);
+  const meta = S[st];
+
+  return (
+    <div onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+    style={{
+      background: hov ? "var(--surface2)" : "var(--surface)",
+      border: `1px solid ${hov ? "var(--border2)" : "var(--border)"}`,
+      borderRadius: 10, padding: "20px 22px",
+      display: "flex", flexDirection: "column", gap: 14,
+      transition: "background 0.18s, border-color 0.18s, transform 0.15s",
+      transform: hov ? "translateY(-2px)" : "translateY(0)",
+      animation: `fadeUp 0.3s ${delay}s ease both`,
+      position: "relative", overflow: "hidden"
+    }}>
+      {r.active && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg,var(--terra),transparent)" }} />}
+
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: r.active ? "var(--terra-dim)" : "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Ic n={r.type === "recurring" ? "repeat" : "bell"} size={14} color={r.active ? "var(--terra)" : "var(--text-dim)"} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.45, color: r.active ? "var(--text)" : "var(--text-dim)", textDecoration: !r.active ? "line-through" : "none", textWrap: "pretty" }}>{r.description}</p>
+          {r.cron && <Mono style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 3, display: "block" }}>↻ {r.cron}</Mono>}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+          {/* kind badge */}
+          <Mono style={{
+            fontSize: 10.5, fontWeight: 600, letterSpacing: "0.08em",
+            padding: "2px 8px", borderRadius: 4,
+            background: r.kind === "LR" ? "var(--terra-dim)" : "var(--surface2)",
+            color: r.kind === "LR" ? "var(--terra)" : "var(--text-muted)",
+            border: `1px solid ${r.kind === "LR" ? "var(--terra-mid)" : "var(--border2)"}`
+          }}>{r.kind || "LU"}</Mono>
+          {/* status badge */}
+          <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 20, background: "var(--surface2)", border: "1px solid var(--border)" }}>
+            <span style={{ width: 5, height: 5, borderRadius: "50%", background: meta.dot }} />
+            <Mono style={{ fontSize: 10.5, letterSpacing: "0.05em", color: meta.text }}>{meta.label}</Mono>
+          </div>
+        </div>
+      </div>
+
+      {r.message &&
+      <div style={{ background: "var(--bg)", borderRadius: 7, padding: "10px 12px", border: "1px solid var(--border)", display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <Mono style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--terra)", flexShrink: 0, paddingTop: 1 }}>Lembrete:</Mono>
+          <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5, fontStyle: "italic" }}>{r.message}</p>
+        </div>
+      }
+
+      {r.notes &&
+      <p style={{ fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.55, padding: "9px 12px", background: "var(--bg)", borderRadius: 6, borderLeft: "2px solid var(--terra-dim)" }}>{r.notes}</p>
+      }
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+        {[
+        { k: "próximo disparo", v: fmtDate(r.next_trigger), sub: relTime(r.next_trigger), hi: r.active },
+        { k: "último disparo", v: fmtDate(r.last_triggered) },
+        { k: "task_id", v: r.id, mono: true },
+        { k: "criado", v: fmtDate(r.created_at) }].
+        map(({ k, v, sub, hi, mono }) =>
+        <div key={k}>
+            <Mono style={{ fontSize: 10, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 2 }}>{k}</Mono>
+            <span style={{ fontSize: mono ? 11 : 12.5, fontFamily: mono ? "'DM Mono',monospace" : "inherit", color: hi ? "var(--terra)" : "var(--text-muted)" }}>{v}</span>
+            {sub && <span style={{ fontSize: 11, color: "var(--text-dim)", marginLeft: 6 }}>{sub}</span>}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 6 }}>
+        <GhostBtn icon="edit" label="Editar" onClick={() => onEdit(r)} />
+        <GhostBtn icon="power" label={r.active ? "Desativar" : "Ativar"} onClick={() => onToggle(r.id)} accent={r.active ? "var(--text-dim)" : "var(--terra)"} />
+        <GhostBtn icon="trash" label="Remover" onClick={() => onDelete(r.id)} accent="#e05c40" style={{ marginLeft: "auto" }} />
+      </div>
+    </div>);
+
+}
+
+const iBase = { width: "100%", background: "var(--bg)", border: "1px solid var(--border2)", borderRadius: 7, padding: "9px 12px", color: "var(--text)", fontSize: 13.5, fontFamily: "'DM Sans',sans-serif", outline: "none" };
+const Fl = ({ label, children }) =>
+<div>
+    <Mono style={{ fontSize: 10.5, letterSpacing: "0.07em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 6 }}>{label}</Mono>
+    {children}
+  </div>;
+
+
+function ReminderModal({ reminder, onClose, onSave }) {
+  const isNew = !reminder;
+  const [form, setForm] = useState(reminder || { description: "", message: "", kind: "LU", type: "once", cron: "", notes: "", next_trigger: new Date(Date.now() + 3600000).toISOString().slice(0, 16), active: true });
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  return (
+    <div onClick={(e) => e.target === e.currentTarget && onClose()} style={{ position: "fixed", inset: 0, zIndex: 100, background: "oklch(0 0 0/0.65)", backdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border2)", borderRadius: 14, padding: 28, width: "100%", maxWidth: 460, animation: "scaleIn 0.2s ease", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 600 }}>{isNew ? "Novo lembrete" : "Editar lembrete"}</h2>
+            {!isNew && <Mono style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2, display: "block" }}>{reminder.id}</Mono>}
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}><Ic n="x" size={17} /></button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Fl label="Descrição"><textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} placeholder="O que devo te lembrar?" style={{ ...iBase, resize: "vertical", lineHeight: 1.5 }} /></Fl>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Fl label="Tipo de lembrete">
+              <select value={form.kind || "LU"} onChange={(e) => set("kind", e.target.value)} style={iBase}>
+                <option value="LU">LU — Lembrete Único</option>
+                <option value="LR">LR — Lembrete Recorrente</option>
+              </select>
+            </Fl>
+            <Fl label="Recorrência">
+              <select value={form.type} onChange={(e) => set("type", e.target.value)} style={iBase}>
+                <option value="once">Uma vez</option>
+                <option value="recurring">Recorrente</option>
+              </select>
+            </Fl>
+          </div>
+          <Fl label="Próximo disparo"><input type="datetime-local" value={form.next_trigger?.slice(0, 16) || ""} onChange={(e) => set("next_trigger", e.target.value)} style={iBase} /></Fl>
+          {form.type === "recurring" && <Fl label="Cron / descrição da recorrência"><input value={form.cron || ""} onChange={(e) => set("cron", e.target.value)} placeholder="ex: diário às 08:00" style={iBase} /></Fl>}
+          <Fl label='Mensagem do lembrete — "Lembrete: ___"'>
+            <textarea value={form.message || ""} onChange={(e) => set("message", e.target.value)} rows={2} placeholder="ex: Hora do remédio! Captopril 25mg 💊" style={{ ...iBase, resize: "vertical", lineHeight: 1.5 }} />
+            <span style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4, display: "block" }}>
+              O Telegram vai enviar: <em style={{ color: "var(--terra)" }}>Lembrete: {form.message || "…"}</em>
+            </span>
+          </Fl>
+          <Fl label="Notas internas (opcional)"><textarea value={form.notes || ""} onChange={(e) => set("notes", e.target.value)} rows={2} placeholder="Contexto adicional..." style={{ ...iBase, resize: "vertical", lineHeight: 1.5 }} /></Fl>
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={{ display: "inline-flex", alignItems: "center", padding: "9px 16px", borderRadius: 8, cursor: "pointer", fontSize: 13.5, fontFamily: "'DM Sans',sans-serif", background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)" }}>Cancelar</button>
+          <button onClick={() => onSave(form)} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "9px 18px", borderRadius: 8, cursor: "pointer", fontSize: 13.5, fontFamily: "'DM Sans',sans-serif", fontWeight: 600, background: "var(--terra)", border: "none", color: "#fff" }}>
+            <Ic n="check" size={14} color="#fff" />{isNew ? "Criar" : "Salvar"}
+          </button>
+        </div>
+      </div>
+    </div>);
+
+}
+
+function DeleteConfirm({ onConfirm, onCancel }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 110, background: "oklch(0 0 0/0.7)", backdropFilter: "blur(5px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--border2)", borderRadius: 12, padding: 28, maxWidth: 340, width: "90%", animation: "scaleIn 0.18s ease", textAlign: "center" }}>
+        <div style={{ width: 44, height: 44, borderRadius: "50%", background: "#2e0e0a", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+          <Ic n="trash" size={18} color="#e05c40" />
+        </div>
+        <h3 style={{ fontSize: 15, marginBottom: 8 }}>Remover lembrete?</h3>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5, marginBottom: 22 }}>Esta ação não pode ser desfeita.</p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button onClick={onCancel} style={{ padding: "8px 16px", borderRadius: 7, cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans',sans-serif", background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)" }}>Cancelar</button>
+          <button onClick={onConfirm} style={{ padding: "8px 16px", borderRadius: 7, cursor: "pointer", fontSize: 13, fontFamily: "'DM Sans',sans-serif", fontWeight: 600, background: "#e05c40", border: "none", color: "white" }}>Remover</button>
+        </div>
+      </div>
+    </div>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: LEMBRETES
+// ─────────────────────────────────────────────────────────────────────────────
+function TabLembretes({ showBanner, onDismissBanner, filter, setFilter }) {
+  const [reminders, setReminders] = useState(() => {
+    try {const s = localStorage.getItem("telia_rem3");return s ? JSON.parse(s) : SEED_REMINDERS;} catch {return SEED_REMINDERS;}
+  });
+  const [editTarget, setEditTarget] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {localStorage.setItem("telia_rem3", JSON.stringify(reminders));}, [reminders]);
+
+  const showToast = (msg) => {setToast(msg);setTimeout(() => setToast(null), 2600);};
+
+  const counts = FILTERS.reduce((a, f) => {
+    a[f.key] = f.key === "all" ? reminders.length : reminders.filter((r) => statusOf(r) === f.key).length;
+    return a;
+  }, {});
+  const filtered = reminders.filter((r) => filter === "all" || statusOf(r) === filter);
+
+  const handleSave = (form) => {
+    if (editTarget === "new") {
+      setReminders((rs) => [{ ...form, id: "task_" + String(Date.now()).slice(-6), created_at: new Date().toISOString(), last_triggered: null, cron: form.type === "recurring" ? form.cron : null }, ...rs]);
+      showToast("Lembrete criado");
+    } else {
+      setReminders((rs) => rs.map((r) => r.id === form.id ? form : r));
+      showToast("Lembrete atualizado");
+    }
+    setEditTarget(null);
+  };
+
+  return (
+    <>
+      {/* filter bar */}
+      <div style={{ padding: "10px 28px", borderBottom: "1px solid var(--border)", display: "flex", gap: 4, alignItems: "center" }}>
+        <Ic n="filter" size={12} color="var(--text-dim)" />
+        <div style={{ width: 8 }} />
+        {FILTERS.map((f) => {
+          const on = filter === f.key;
+          return (
+            <button key={f.key} onClick={() => setFilter(f.key)} style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "4px 11px", borderRadius: 6, cursor: "pointer",
+              fontSize: 12.5, fontFamily: "'DM Sans',sans-serif",
+              background: on ? "var(--surface2)" : "transparent",
+              border: `1px solid ${on ? "var(--border2)" : "transparent"}`,
+              color: on ? "var(--text)" : "var(--text-muted)",
+              transition: "all 0.12s"
+            }}>
+              {f.label}
+              <Mono style={{ fontSize: 10, background: on ? "var(--terra-dim)" : "var(--surface2)", color: on ? "var(--terra)" : "var(--text-dim)", borderRadius: 4, padding: "1px 5px" }}>{counts[f.key]}</Mono>
+            </button>);
+
+        })}
+        <div style={{ marginLeft: "auto" }}>
+          <button onClick={() => setEditTarget("new")} style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "var(--terra)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>
+            <Ic n="plus" size={13} color="#fff" />Novo lembrete
+          </button>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>
+        {showBanner && <WelcomeBanner onDismiss={onDismissBanner} />}
+        {filtered.length === 0 ?
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200, gap: 10, color: "var(--text-dim)" }}>
+            <Ic n="bell" size={36} color="var(--border2)" />
+            <p style={{ fontSize: 14 }}>Nenhum lembrete neste filtro</p>
+          </div> :
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: 14 }}>
+            {filtered.map((r, i) =>
+          <ReminderCard key={r.id} r={r}
+          onEdit={setEditTarget}
+          onDelete={setDeleteId}
+          onToggle={(id) => setReminders((rs) => rs.map((x) => x.id === id ? { ...x, active: !x.active } : x))}
+          delay={i * 0.04} />
+
+          )}
+          </div>
+        }
+      </div>
+
+      {editTarget && <ReminderModal reminder={editTarget === "new" ? null : editTarget} onClose={() => setEditTarget(null)} onSave={handleSave} />}
+      {deleteId && <DeleteConfirm onConfirm={() => {setReminders((rs) => rs.filter((r) => r.id !== deleteId));setDeleteId(null);showToast("Lembrete removido");}} onCancel={() => setDeleteId(null)} />}
+      {toast &&
+      <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "var(--surface2)", border: "1px solid var(--border2)", borderRadius: 8, padding: "10px 18px", display: "flex", alignItems: "center", gap: 9, fontSize: 13, color: "var(--terra)", boxShadow: "0 8px 30px oklch(0 0 0/0.45)", animation: "slideUp 0.22s ease", zIndex: 200, whiteSpace: "nowrap" }}>
+          <Ic n="check" size={14} color="var(--terra)" />{toast}
+        </div>
+      }
+    </>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: HISTÓRICO
+// ─────────────────────────────────────────────────────────────────────────────
+function TabHistorico() {
+  const [open, setOpen] = useState(null); // session id
+
+  const session = SEED_SESSIONS.find((s) => s.id === open);
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px" }}>
+      {open ? (
+      /* ── chat view ── */
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>
+          <button onClick={() => setOpen(null)} style={{
+          display: "inline-flex", alignItems: "center", gap: 7, marginBottom: 20,
+          background: "transparent", border: "1px solid var(--border2)",
+          borderRadius: 7, padding: "6px 14px", cursor: "pointer",
+          fontSize: 12.5, color: "var(--text-muted)", fontFamily: "'DM Sans',sans-serif"
+        }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+            Voltar ao histórico
+          </button>
+
+          {/* session header */}
+          <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 10, padding: "14px 18px", marginBottom: 20, display: "flex", gap: 14, alignItems: "flex-start" }}>
+            <div>
+              <Mono style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 6 }}>
+                {new Date(session.date).toLocaleString("pt-BR", { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}
+              </Mono>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {session.keywords.map((k) =>
+              <span key={k} style={{ fontSize: 11.5, padding: "3px 10px", borderRadius: 20, background: "var(--terra-dim)", color: "var(--terra)", border: "1px solid var(--terra-mid)" }}>{k}</span>
+              )}
+              </div>
+            </div>
+            <Mono style={{ marginLeft: "auto", fontSize: 11, color: "var(--text-dim)", flexShrink: 0 }}>{session.msg_count} msgs</Mono>
+          </div>
+
+          {/* messages */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {session.messages.map((m) => {
+            const isUser = m.role === "user";
+            return (
+              <div key={m.id} style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", marginBottom: 4 }}>
+                  {!isUser &&
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--terra-dim)", display: "flex", alignItems: "center", justifyContent: "center", marginRight: 10, flexShrink: 0, alignSelf: "flex-end", marginBottom: 2 }}>
+                      <Mono style={{ fontSize: 9, fontWeight: 700, color: "var(--terra)" }}>T</Mono>
+                    </div>
+                }
+                  <div style={{
+                  maxWidth: "70%",
+                  background: isUser ? "var(--terra-dim)" : "var(--surface)",
+                  border: `1px solid ${isUser ? "var(--terra-mid)" : "var(--border)"}`,
+                  borderRadius: isUser ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                  padding: "10px 14px"
+                }}>
+                    <p style={{ fontSize: 13.5, color: "var(--text)", lineHeight: 1.55 }}>{m.content}</p>
+                    <Mono style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 5, display: "block", textAlign: isUser ? "right" : "left" }}>
+                      {new Date(m.ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    </Mono>
+                  </div>
+                  {isUser &&
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "var(--surface2)", display: "flex", alignItems: "center", justifyContent: "center", marginLeft: 10, flexShrink: 0, alignSelf: "flex-end", marginBottom: 2 }}>
+                      <Mono style={{ fontSize: 9, fontWeight: 600, color: "var(--text-muted)" }}>EZ</Mono>
+                    </div>
+                }
+                </div>);
+
+          })}
+          </div>
+        </div>) : (
+
+      /* ── gallery view ── */
+      <>
+          <div style={{ marginBottom: 18, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 3 }}>Histórico de conversas</h2>
+              <p style={{ fontSize: 13, color: "var(--text-muted)" }}>{SEED_SESSIONS.length} sessões registradas</p>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 14 }}>
+            {SEED_SESSIONS.map((s, i) =>
+          <button key={s.id} onClick={() => setOpen(s.id)} style={{
+            background: "var(--surface)", border: "1px solid var(--border)",
+            borderRadius: 10, padding: "18px 20px",
+            display: "flex", flexDirection: "column", gap: 12,
+            cursor: "pointer", textAlign: "left", transition: "all 0.15s",
+            animation: `fadeUp 0.3s ${i * 0.05}s ease both`,
+            position: "relative", overflow: "hidden"
+          }}
+          onMouseEnter={(e) => {e.currentTarget.style.borderColor = "var(--border2)";e.currentTarget.style.transform = "translateY(-2px)";e.currentTarget.style.background = "var(--surface2)";}}
+          onMouseLeave={(e) => {e.currentTarget.style.borderColor = "var(--border)";e.currentTarget.style.transform = "translateY(0)";e.currentTarget.style.background = "var(--surface)";}}>
+            
+                <div style={{ height: 2, position: "absolute", top: 0, left: 0, right: 0, background: `linear-gradient(90deg,var(--terra),transparent)`, opacity: 0.5 }} />
+
+                {/* date + count */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <Mono style={{ fontSize: 10.5, color: "var(--text-dim)" }}>
+                    {new Date(s.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                    {" · "}
+                    {new Date(s.date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </Mono>
+                  <Mono style={{ fontSize: 10, color: "var(--text-dim)", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}>
+                    {s.msg_count} msgs
+                  </Mono>
+                </div>
+
+                {/* preview */}
+                <p style={{ fontSize: 13, color: "var(--text-muted)", lineHeight: 1.5, fontStyle: "italic" }}>
+                  "{s.preview}"
+                </p>
+
+                {/* keywords */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                  {s.keywords.map((k) =>
+              <span key={k} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 20, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text-dim)" }}>{k}</span>
+              )}
+                </div>
+
+                {/* cta */}
+                <div style={{ display: "flex", alignItems: "center", gap: 5, color: "var(--terra)", marginTop: 2 }}>
+                  <span style={{ fontSize: 12 }}>Ver conversa</span>
+                  <Ic n="chevron" size={12} color="var(--terra)" />
+                </div>
+              </button>
+          )}
+          </div>
+        </>)
+      }
+    </div>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: PERFIL
+// ─────────────────────────────────────────────────────────────────────────────
+function TabPerfil() {
+  const [profile, setProfile] = useState(SEED_PROFILE);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(profile);
+  const [saved, setSaved] = useState(false);
+
+  const editableFields = [
+  { k: "nome", label: "Nome completo" },
+  { k: "telegram_id", label: "Telegram ID" },
+  { k: "cidade", label: "Cidade" },
+  { k: "profissao", label: "Profissão" },
+  { k: "timezone", label: "Fuso horário" },
+  { k: "modelo_ia", label: "Modelo de IA" },
+  { k: "idioma", label: "Idioma" }];
+
+  const readonlyFields = [
+  { k: "criado_em", label: "Conta criada" },
+  { k: "ultimo_acesso", label: "Último acesso" },
+  { k: "total_lembretes", label: "Total de lembretes" },
+  { k: "total_mensagens", label: "Total de mensagens" }];
+
+
+  const handleSave = () => {
+    setProfile(draft);
+    setEditing(false);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2600);
+  };
+
+  const fmtVal = (k, v) => {
+    if (k === "criado_em" || k === "ultimo_acesso") return fmtDate(v);
+    return String(v);
+  };
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "28px" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", flexDirection: "column", gap: 20 }}>
+
+        {/* user card */}
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border2)", borderRadius: 12, padding: "28px 28px 24px", display: "flex", gap: 20, alignItems: "flex-start" }}>
+          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--terra-dim)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Mono style={{ fontSize: 20, fontWeight: 700, color: "var(--terra)" }}>{">/"}</Mono>
+          </div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.01em", marginBottom: 4 }}>
+              {profile.nome
+                ? profile.nome
+                : <span style={{ color: "var(--text-dim)", fontStyle: "italic", fontWeight: 400, fontSize: 15 }}>você não me falou seu nome 😕</span>
+              }
+            </h2>
+            <Mono style={{ fontSize: 12, color: profile.telegram_id ? "var(--terra)" : "var(--text-dim)", display: "block", marginBottom: 8, fontStyle: profile.telegram_id ? "normal" : "italic" }}>
+              {profile.telegram_id ? profile.telegram_id : "@[ você não contou seu apelido para mim 😕 ]"}
+            </Mono>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {[profile.cidade, profile.profissao, profile.modelo_ia].map((v) =>
+              <span key={v} style={{ fontSize: 11.5, color: "var(--text-muted)", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 10px" }}>{v}</span>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {!editing ?
+            <button onClick={() => {setDraft(profile);setEditing(true);}} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--surface2)", border: "1px solid var(--border2)", color: "var(--text-muted)", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>
+                <Ic n="edit" size={13} color="var(--text-muted)" />Editar
+              </button> :
+
+            <>
+                <button onClick={() => setEditing(false)} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid var(--border2)", color: "var(--text-muted)", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>
+                  Cancelar
+                </button>
+                <button onClick={handleSave} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--terra)", border: "none", color: "#fff", borderRadius: 8, padding: "8px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans',sans-serif" }}>
+                  <Ic n="save" size={13} color="#fff" />Salvar
+                </button>
+              </>
+            }
+          </div>
+        </div>
+
+        {/* editable fields */}
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+            <Ic n="user" size={13} color="var(--text-dim)" />
+            <Mono style={{ fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>Informações do perfil</Mono>
+          </div>
+          {editableFields.map(({ k, label }, i) =>
+          <div key={k} style={{
+            display: "grid", gridTemplateColumns: "180px 1fr",
+            padding: "12px 22px", alignItems: "center",
+            borderBottom: i < editableFields.length - 1 ? "1px solid var(--border)" : "none",
+            background: editing ? "transparent" : "transparent"
+          }}>
+              <Mono style={{ fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-dim)" }}>{label}</Mono>
+              {editing ?
+            <input value={draft[k] || ""} onChange={(e) => setDraft((d) => ({ ...d, [k]: e.target.value }))}
+            style={{ ...iBase, fontSize: 13, padding: "6px 10px", maxWidth: 340 }} /> :
+
+            <span style={{ fontSize: 13.5, color: "var(--text)" }}>{profile[k]}</span>
+            }
+            </div>
+          )}
+        </div>
+
+        {/* readonly fields */}
+        <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 8 }}>
+            <Ic n="history" size={13} color="var(--text-dim)" />
+            <Mono style={{ fontSize: 10.5, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>Dados do sistema</Mono>
+          </div>
+          {readonlyFields.map(({ k, label }, i) =>
+          <div key={k} style={{
+            display: "grid", gridTemplateColumns: "180px 1fr",
+            padding: "12px 22px", alignItems: "center",
+            borderBottom: i < readonlyFields.length - 1 ? "1px solid var(--border)" : "none"
+          }}>
+              <Mono style={{ fontSize: 11, letterSpacing: "0.05em", textTransform: "uppercase", color: "var(--text-dim)" }}>{label}</Mono>
+              <Mono style={{ fontSize: 13, color: "var(--text-muted)" }}>{fmtVal(k, profile[k])}</Mono>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {saved &&
+      <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "var(--surface2)", border: "1px solid var(--border2)", borderRadius: 8, padding: "10px 18px", display: "flex", alignItems: "center", gap: 9, fontSize: 13, color: "var(--terra)", boxShadow: "0 8px 30px oklch(0 0 0/0.45)", animation: "slideUp 0.22s ease", zIndex: 200, whiteSpace: "nowrap" }}>
+          <Ic n="check" size={14} color="var(--terra)" />Perfil atualizado
+        </div>
+      }
+    </div>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APP
+// ─────────────────────────────────────────────────────────────────────────────
+const TABS = [
+{ key: "lembretes", label: "Lembretes", icon: "bell" },
+{ key: "historico", label: "Histórico", icon: "history" },
+{ key: "perfil", label: "Perfil", icon: "user" }];
+
+
+function App() {
+  const [tab, setTab] = useState(() => localStorage.getItem("telia_tab") || "lembretes");
+  const [filter, setFilter] = useState("all");
+  const [showBanner, setShowBanner] = useState(() => localStorage.getItem("telia_banner_dismissed") !== "1");
+
+  useEffect(() => {localStorage.setItem("telia_tab", tab);}, [tab]);
+
+  // breadcrumb label
+  const breadcrumbSub = tab === "lembretes" ?
+  FILTERS.find((f) => f.key === filter)?.label :
+  TABS.find((t) => t.key === tab)?.label;
+
+  return (
+    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
+
+      {/* ── HEADER ── */}
+      <header style={{ background: "var(--surface)", borderBottom: "1px solid var(--border)", padding: "11px 28px", display: "flex", alignItems: "center", gap: 16, flexShrink: 0 }}>
+        {/* breadcrumb */}
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <Mono style={{ fontSize: 13, color: "var(--terra)", fontWeight: 500 }}>{">"}</Mono>
+          <Mono style={{ fontSize: 13, color: "var(--text-dim)", margin: "0 6px" }}>/</Mono>
+          <Mono style={{ fontSize: 13, color: "var(--text-muted)" }}>TELia</Mono>
+          <Mono style={{ fontSize: 13, color: "var(--text-dim)", margin: "0 6px" }}>/</Mono>
+          <Mono style={{ fontSize: 13, color: "var(--text-muted)" }}>Lembretes</Mono>
+          <Mono style={{ fontSize: 13, color: "var(--text-dim)", margin: "0 6px" }}>/</Mono>
+          <Mono style={{ fontSize: 13, color: "var(--text)", fontWeight: 500, transition: "color 0.15s" }}>{breadcrumbSub}</Mono>
+        </div>
+
+        {/* tabs */}
+        <nav style={{ display: "flex", gap: 2, marginLeft: 24 }}>
+          {TABS.map((t) => {
+            const on = tab === t.key;
+            return (
+              <button key={t.key} onClick={() => setTab(t.key)} style={{
+                display: "inline-flex", alignItems: "center", gap: 7,
+                padding: "6px 14px", borderRadius: 7, cursor: "pointer",
+                fontSize: 13, fontFamily: "'DM Sans',sans-serif",
+                background: on ? "var(--terra-dim)" : "transparent",
+                border: "1px solid " + (on ? "var(--terra-mid)" : "transparent"),
+                color: on ? "var(--terra)" : "var(--text-muted)",
+                transition: "all 0.15s"
+              }}>
+                <Ic n={t.icon} size={13} color={on ? "var(--terra)" : "var(--text-dim)"} />
+                {t.label}
+              </button>);
+
+          })}
+        </nav>
+
+        {/* user chip — clicks to perfil */}
+        <button
+          onClick={() => setTab("perfil")}
+          title="Ver perfil"
+          style={{
+            marginLeft: "auto",
+            display: "flex", alignItems: "center", gap: 9,
+            background: "var(--surface2)", border: "1px solid var(--border)",
+            borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+            transition: "border-color 0.15s"
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.borderColor = "var(--terra-mid)"}
+          onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--border)"}>
+          
+          <div style={{ width: 24, height: 24, borderRadius: "50%", background: "var(--terra-dim)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Mono style={{ fontSize: 10, fontWeight: 700, color: "var(--terra)" }}>{">/"}</Mono>
+          </div>
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontSize: 12.5, fontWeight: 500, lineHeight: 1.2, color: "var(--text)" }}>Emanuel Ziegler Martins</div>
+            <Mono style={{ fontSize: 10, color: "var(--text-dim)", display: "block" }}>user_id: 0042</Mono>
+          </div>
+          <Ic n="chevron" size={12} color="var(--text-dim)" />
+        </button>
+      </header>
+
+      {/* ── CONTENT ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {tab === "lembretes" &&
+        <TabLembretes
+          showBanner={showBanner}
+          onDismissBanner={() => {localStorage.setItem("telia_banner_dismissed", "1");setShowBanner(false);}}
+          filter={filter}
+          setFilter={setFilter} />
+
+        }
+        {tab === "historico" && <TabHistorico />}
+        {tab === "perfil" && <TabPerfil />}
+      </div>
+
+      <TweaksPanel currentTab={tab} setTab={setTab} />
+    </div>);
+
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TWEAKS
+// ─────────────────────────────────────────────────────────────────────────────
+const TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{
+  "accentColor": "#c16048",
+  "cardBorder": "subtle"
+} /*EDITMODE-END*/;
+
+function TweaksPanel({ currentTab, setTab }) {
+  const [vis, setVis] = useState(false);
+  const [vals, setVals] = useState(TWEAK_DEFAULS);
+
+  useEffect(() => {
+    window.addEventListener("message", (e) => {
+      if (e.data?.type === "__activate_edit_mode") setVis(true);
+      if (e.data?.type === "__deactivate_edit_mode") setVis(false);
+    });
+    window.parent.postMessage({ type: "__edit_mode_available" }, "*");
+  }, []);
+
+  const set = (k, v) => {
+    const next = { ...vals, [k]: v };
+    setVals(next);
+    window.parent.postMessage({ type: "__edit_mode_set_keys", edits: next }, "*");
+    if (k === "accentColor") {
+      document.documentElement.style.setProperty("--terra", v);
+    }
+  };
+
+  if (!vis) return null;
+  return (
+    <div style={{ position: "fixed", bottom: 24, right: 24, zIndex: 300, background: "var(--surface2)", border: "1px solid var(--border2)", borderRadius: 12, padding: "16px 18px", width: 220, boxShadow: "0 12px 40px oklch(0 0 0/0.5)", animation: "scaleIn 0.2s ease" }}>
+      <Mono style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)", display: "block", marginBottom: 14 }}>Tweaks</Mono>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Cor de destaque</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["#c16048", "Terracota"], ["#4f7caa", "Ardósia"], ["#6a8f5e", "Salva"], ["#a07840", "Cobre"]].map(([c, label]) =>
+          <div key={c} title={label} onClick={() => set("accentColor", c)} style={{ width: 22, height: 22, borderRadius: "50%", background: c, cursor: "pointer", outline: vals.accentColor === c ? `2px solid ${c}` : "none", outlineOffset: 2 }} />
+          )}
+        </div>
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 8 }}>Ir para aba</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {TABS.map((t) =>
+          <button key={t.key} onClick={() => setTab(t.key)} style={{ fontSize: 10, fontFamily: "'DM Mono',monospace", padding: "3px 7px", borderRadius: 4, cursor: "pointer", background: currentTab === t.key ? "var(--terra-dim)" : "transparent", border: "1px solid var(--border2)", color: currentTab === t.key ? "var(--terra)" : "var(--text-muted)" }}>{t.label}</button>
+          )}
+        </div>
+      </div>
+    </div>);
+
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

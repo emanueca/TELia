@@ -14,6 +14,7 @@ from database.queries import (
     email_existe,
     set_logado,
     set_chat_session,
+    clear_user_profile,
     save_report,
     save_reminder_task,
     get_reminder_task_by_id,
@@ -81,6 +82,29 @@ def _normalize_reporter_name(text: str) -> tuple[str | None, bool]:
         return None, True
 
     return cleaned, False
+
+
+def _remember_chat_message(context: ContextTypes.DEFAULT_TYPE, message_id: int | None):
+    if not message_id:
+        return
+
+    cleanup_ids = context.chat_data.setdefault("cleanup_message_ids", [])
+    if message_id not in cleanup_ids:
+        cleanup_ids.append(message_id)
+        if len(cleanup_ids) > 200:
+            del cleanup_ids[:-200]
+
+
+async def _cleanup_chat_messages(context: ContextTypes.DEFAULT_TYPE, bot, chat_id: int) -> int:
+    cleanup_ids = list(context.chat_data.pop("cleanup_message_ids", []))
+    deleted = 0
+    for message_id in reversed(cleanup_ids):
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=message_id)
+            deleted += 1
+        except Exception:
+            pass
+    return deleted
 
 
 def _to_datetime(value) -> datetime | None:
@@ -320,11 +344,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text = update.message.text.strip()
         chat_id = update.effective_chat.id
+        _remember_chat_message(context, update.message.message_id)
         awaiting = context.user_data.get("awaiting")
         usuario = None
         user_id = None
 
-        if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name"}:
+        if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name", "restore_factory"}:
             usuario = get_usuario(chat_id)
             if not usuario or not usuario["logado"]:
                 context.user_data.pop("awaiting", None)
@@ -336,8 +361,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             user_id = usuario["chat_id"]
 
+        if awaiting == "clean_confirm":
+            answer = (text or "").strip().lower()
+            if answer in {"sim", "s", "yes", "y"}:
+                deleted = await _cleanup_chat_messages(context, context.bot, chat_id)
+                context.user_data["awaiting"] = "restore_factory"
+                await update.message.reply_text(
+                    f"✅ Pronto. Limpei as mensagens desta conversa no Telegram ({deleted} mensagens removidas quando possível).\n\n"
+                    "Nada foi apagado do banco. Se quiser apagar também seus dados salvos como nome, cidade, apelido e IA preferida,\n"
+                    "digite RESTAURAR TUDO."
+                )
+                return
+            if answer in {"não", "nao", "n", "no"}:
+                context.user_data.pop("awaiting", None)
+                await update.message.reply_text(
+                    "Tudo bem. Não limpei nada. Se mudar de ideia, use /clean novamente."
+                )
+                return
+
+            await update.message.reply_text(
+                "Responda com sim ou não.\n"
+                "Se quiser limpar só as mensagens do Telegram, diga sim."
+            )
+            return
+
         if awaiting == "report_issue":
             aguarde = await update.message.reply_text("✍️ Analisando seu relato...")
+            _remember_chat_message(context, aguarde.message_id)
             try:
                 profile = get_profile(user_id)
                 ai_reply = process_report_issue(text, profile)
@@ -404,6 +454,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             aguarde = await update.message.reply_text("✍️ Ajustando lembrete...")
+            _remember_chat_message(context, aguarde.message_id)
             try:
                 profile = get_profile(user_id)
                 history = get_history(user_id)
@@ -489,6 +540,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
+        if awaiting == "restore_factory":
+            if text.strip().upper() == "RESTAURAR TUDO":
+                if not usuario:
+                    await update.message.reply_text(
+                        "Para restaurar suas informações salvas, primeiro faça login com /login."
+                    )
+                    return
+
+                try:
+                    clear_user_profile(user_id)
+                    context.user_data.pop("awaiting", None)
+                    await update.message.reply_text(
+                        "✅ Restauração de fábrica concluída.\n"
+                        "Apaguei nome, cidade, apelido, IA preferida e outras preferências salvas no seu perfil.\n\n"
+                        "Se quiser, agora você pode me contar novamente o que eu devo lembrar sobre você."
+                    )
+                except Exception:
+                    logger.exception("Falha ao restaurar perfil do usuário.")
+                    await update.message.reply_text(
+                        "⚠️ Não consegui restaurar suas informações agora. Tente novamente em instantes."
+                    )
+                return
+
+            await update.message.reply_text(
+                "Se quiser apagar seus dados salvos e voltar ao padrão, digite exatamente: RESTAURAR TUDO."
+            )
+            return
+
         # ── Fluxo de formulário (login ou cadastro) ───────────
         if text.startswith("E-mail:") and "Senha:" in text:
             if awaiting == "cadastrar":
@@ -527,6 +606,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # ── Conversa com IA ───────────────────────────────────
         aguarde = await update.message.reply_text("✍️ Pensando...")
+        _remember_chat_message(context, aguarde.message_id)
 
         try:
             history = get_history(user_id)

@@ -84,6 +84,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cadastrar — criar nova conta\n"
         "/login — entrar na conta\n"
         "/sair — encerrar sessão\n"
+        "/clean — apagar as mensagens visíveis deste chat\n"
         "/reportar — relatar um problema\n"
         "/lembretes — listar, apagar ou mudar lembretes\n"
         "/ia — escolher o modelo de IA da sua conta\n"
@@ -103,18 +104,15 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Primeira mensagem: explicação
     await update.message.reply_text(
         "*🤖 Como a TELia funciona:*\n\n"
-        "A TELia usa a IA para entender e responder suas mensagens "
-        "com pythonde forma otimizada.\n\n"
+        "A TELia usa IA para entender suas mensagens, guardar contexto por usuário e responder de forma natural.\n\n"
         "*💡 Por que criar uma conta?*\n"
-        "• Suas conversas ficam salvas — a IA lembra o contexto das últimas mensagens\n"
-        "• Lembretes são vinculados à sua conta e enviados no horário certo\n"
-        "• A IA aprende informações sobre você (nome, cidade, profissão...) e usa isso nas respostas\n"
-        "• Seus dados ficam protegidos por senha\n\n"
+        "• Suas conversas ficam salvas por usuário e não vazam para outras contas\n"
+        "• Lembretes ficam em reminder_tasks, com suporte a lembrete único e recorrente\n"
+        "• O perfil do usuário guarda informações como nome, cidade, profissão, timezone e modelo de IA\n"
+        "• Você pode apagar só as mensagens visíveis da conversa com /clean\n"
+        "• Você também pode relatar problemas com /reportar\n\n"
         "*⚙️ Como a IA funciona:*\n"
-        "Cada mensagem sua é enviada ao Gemini junto com:\n"
-        "  1. Seu histórico recente de conversa (últimas 15 mensagens)\n"
-        "  2. Seu perfil (informações que você compartilhou)\n"
-        "Isso permite respostas com contexto e memória real.\n\n"
+        "Cada mensagem sua vai para o Gemini junto com o histórico recente da conta e o perfil salvo no banco.\n\n"
         "*✨ O que você pode fazer:*\n"
         "• *Conversar livremente* — faça perguntas, peça opiniões, bata papo\n"
         "• *Criar lembretes* — 'me lembra de tomar remédio às 10h'\n"
@@ -123,13 +121,21 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/cadastrar — criar nova conta\n"
         "/login — entrar na conta\n"
         "/sair — encerrar sessão\n"
+        "/clean — apagar as mensagens visíveis do Telegram\n"
         "/reportar — relatar um problema\n"
         "/ia — escolher modelo de IA\n"
         "/lembretes — listar, apagar ou mudar lembretes\n"
         "/timezone — definir seu fuso horario\n"
         "/start — abrir o menu inicial\n"
         "/help — atalho para /ajuda\n"
-        "/ajuda — esta mensagem" + MSG_GITHUB,
+        "/ajuda — esta mensagem\n\n"
+        "*🧰 Bibliotecas usadas:*\n"
+        "• `python-telegram-bot` — comandos, mensagens e botões\n"
+        "• `mysql-connector-python` — conexão com o MySQL\n"
+        "• `google-generativeai` — integração com o Gemini\n"
+        "• `timezonefinder` — detecção automática de fuso horário\n"
+        "• `python-dotenv` — carregamento das variáveis do .env"
+        + MSG_GITHUB,
         parse_mode="Markdown",
     )
     
@@ -145,7 +151,8 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "       ↓ (autenticado)\n"
         "  📚 Carrega CONTEXTO\n"
         "       ├─ conversation_history (últimas 15 msgs)\n"
-        "       └─ user_profile (seu perfil)\n"
+        "       ├─ user_profile (nome, cidade, timezone, IA)\n"
+        "       └─ chat_sessions (qual conta está ativa neste chat)\n"
         "       ↓\n"
         "  🧠 Envia ao GEMINI\n"
         "       │\n"
@@ -161,10 +168,24 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  💾 TELia SALVA no BD:\n"
         "       ├─ conversation_history (sua msg + resposta)\n"
         "       ├─ user_profile (dados aprendidos)\n"
-        "       └─ reminder_tasks (se foi um lembrete)\n"
+        "       ├─ reminder_tasks (se foi um lembrete)\n"
+        "       └─ reports (quando você usa /reportar)\n"
         "       ↓\n"
         "  📤 Resposta enviada para você\n"
         "```",
+        parse_mode="Markdown",
+    )
+
+
+async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["awaiting"] = "clean_confirm"
+    await update.message.reply_text(
+        "Você tem certeza que quer apagar as mensagens visíveis desta conversa aqui no Telegram?\n\n"
+        "Responda com *sim* para limpar apenas o chat.\n"
+        "Responda com *não* para cancelar.\n\n"
+        "Se quiser também apagar seus dados salvos no banco (nome, cidade, apelido, IA preferida...),\n"
+        "eu vou te mostrar a opção de restaurar tudo depois."
+        + MSG_GITHUB,
         parse_mode="Markdown",
     )
 
