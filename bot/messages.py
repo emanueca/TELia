@@ -16,6 +16,7 @@ from database.queries import (
     set_chat_session,
     save_reminder_task,
     get_reminder_task_by_id,
+    get_overdue_reminder_tasks,
     deactivate_reminder_task,
     update_reminder_task_schedule,
     save_message,
@@ -27,6 +28,20 @@ from ai.gemini import process_message
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TZ = "America/Sao_Paulo"
+
+
+async def _safe_edit(msg, text: str, parse_mode: str | None = None):
+    """Edita uma mensagem Telegram; se falhar com Markdown, tenta sem formatação."""
+    try:
+        await msg.edit_text(text, parse_mode=parse_mode)
+    except Exception:
+        if parse_mode:
+            try:
+                await msg.edit_text(text)
+            except Exception:
+                logger.exception("Falha ao editar mensagem (fallback sem parse_mode).")
+        else:
+            logger.exception("Falha ao editar mensagem.")
 _DAY_TO_WEEKDAY = {
     "MON": 0,
     "TUE": 1,
@@ -323,8 +338,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 result = process_message(text, history, profile)
             except Exception:
                 logger.exception("Falha ao processar edição de lembrete com IA.")
-                await aguarde.edit_text(
-                    "⚠️ Não consegui processar a alteração agora. Tente novamente em instantes."
+                await _safe_edit(
+                    aguarde,
+                    "⚠️ Não consegui processar a alteração agora. Tente novamente em instantes.",
                 )
                 return
 
@@ -332,8 +348,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not current_task:
                 context.user_data.pop("awaiting", None)
                 context.user_data.pop("editing_task_id", None)
-                await aguarde.edit_text(
-                    "Não achei esse lembrete. Use /lembretes para recarregar sua lista."
+                await _safe_edit(
+                    aguarde,
+                    "Não achei esse lembrete. Use /lembretes para recarregar sua lista.",
                 )
                 return
 
@@ -351,9 +368,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             translated = _translate_logic_code(logic_code, reminder, profile)
             if not translated:
-                await aguarde.edit_text(
+                await _safe_edit(
+                    aguarde,
                     "Não consegui entender o novo formato desse lembrete.\n"
-                    "Tente algo como: `todo dia às 19:00`, `segunda e sexta às 08:30` ou `daqui a 15 minutos`."
+                    "Tente algo como: `todo dia às 19:00`, `segunda e sexta às 08:30` ou `daqui a 15 minutos`.",
                 )
                 return
 
@@ -368,14 +386,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 next_run_at=translated["next_run_at"],
             )
             if not changed:
-                await aguarde.edit_text(
-                    "Não consegui atualizar esse lembrete agora. Tente de novo com /lembretes."
+                await _safe_edit(
+                    aguarde,
+                    "Não consegui atualizar esse lembrete agora. Tente de novo com /lembretes.",
                 )
                 return
 
             context.user_data.pop("awaiting", None)
             context.user_data.pop("editing_task_id", None)
-            await aguarde.edit_text(
+            await _safe_edit(
+                aguarde,
                 "✅ Lembrete atualizado com sucesso!\n"
                 f"Novo horário: *{translated['display_run_at']}* ({translated['timezone']}).",
                 parse_mode="Markdown",
@@ -442,7 +462,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             result = process_message(text, history, profile)
         except Exception:
             logger.exception("Falha na chamada ao Gemini.")
-            await aguarde.edit_text("⚠️ Erro ao processar sua mensagem. Tente novamente.")
+            await _safe_edit(aguarde, "⚠️ Erro ao processar sua mensagem. Tente novamente.")
             return
 
         # Salva a troca no histórico
@@ -507,13 +527,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"{result['reply']}\n\n"
                 f"✅ Lembrete {tipo} salvo para *{saved_task['display_run_at']}* ({saved_task['timezone']})."
             )
-            await aguarde.edit_text(resposta, parse_mode="Markdown")
+            await _safe_edit(aguarde, resposta, parse_mode="Markdown")
         elif reminder:
-            await aguarde.edit_text(
-                result["reply"] + "\n\n⚠️ Não consegui salvar o lembrete. Tente novamente."
+            await _safe_edit(
+                aguarde,
+                result["reply"] + "\n\n⚠️ Não consegui salvar o lembrete. Tente novamente.",
             )
         else:
-            await aguarde.edit_text(result["reply"])
+            await _safe_edit(aguarde, result["reply"])
 
     except Exception:
         logger.exception("Erro inesperado no fluxo de mensagem.")
@@ -588,3 +609,15 @@ async def _processar_login(update: Update, context, chat_id: int, text: str):
         "Pode me mandar uma mensagem, pedir um lembrete ou contar novidades."
         + MSG_GITHUB
     )
+
+    # Notifica lembretes que dispararam enquanto o usuário estava fora
+    try:
+        atrasados = get_overdue_reminder_tasks(usuario["chat_id"])
+        if atrasados:
+            linhas = "\n".join(f"• {t['message']}" for t in atrasados)
+            await update.message.reply_text(
+                f"⏰ Você tinha lembrete(s) enquanto estava fora:\n\n{linhas}\n\n"
+                "Use /lembretes para ver todos os seus lembretes ativos."
+            )
+    except Exception:
+        logger.exception("Falha ao verificar lembretes em atraso no login.")

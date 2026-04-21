@@ -366,6 +366,31 @@ def get_due_reminder_tasks(limit: int = 100) -> list[dict]:
     return rows
 
 
+def get_overdue_reminder_tasks(user_id: int) -> list[dict]:
+    """Retorna lembretes já enviados (active=FALSE, last_sent_at preenchido)
+    que dispararam após o último login do usuário — serve para notificar
+    lembretes perdidos ao fazer login."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT id, message, next_run_at, last_sent_at
+        FROM reminder_tasks
+        WHERE user_id = %s
+          AND active = FALSE
+          AND last_sent_at IS NOT NULL
+          AND last_sent_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        ORDER BY last_sent_at DESC
+        LIMIT 10
+        """,
+        (user_id,),
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+
+
 def get_active_reminder_tasks(user_id: int) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
