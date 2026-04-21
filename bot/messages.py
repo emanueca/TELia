@@ -599,13 +599,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         if context.chat_data.get("ai_processing"):
+            try:
+                save_message(user_id, "user", text)
+            except Exception:
+                logger.exception("Falha ao salvar mensagem durante processamento em andamento.")
+
+            wait_text = "⏳ Ainda estou finalizando seu pedido anterior. Aguarde alguns segundos e tente novamente."
             aviso = await update.message.reply_text(
-                "⏳ Ainda estou finalizando seu pedido anterior. Aguarde alguns segundos e tente novamente."
+                wait_text
             )
             _remember_chat_message(context, aviso.message_id)
+            try:
+                save_message(user_id, "assistant", wait_text)
+            except Exception:
+                logger.exception("Falha ao salvar aviso de processamento em andamento.")
             return
 
         context.chat_data["ai_processing"] = True
+
+        # Persiste a mensagem do usuário antes da chamada da IA para não perder histórico
+        # em caso de timeout, falha externa ou cancelamento do processamento.
+        try:
+            save_message(user_id, "user", text)
+        except Exception:
+            logger.exception("Falha ao salvar mensagem do usuário no histórico.")
 
         # ── Conversa com IA ───────────────────────────────────
         aguarde = await update.message.reply_text("✍️ Cozinhando.")
@@ -637,6 +654,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except asyncio.TimeoutError:
                     process_task.cancel()
                     await _safe_edit(aguarde, _THINKING_TIMEOUT_TEXT)
+                    try:
+                        save_message(user_id, "assistant", _THINKING_TIMEOUT_TEXT)
+                    except Exception:
+                        logger.exception("Falha ao salvar timeout no histórico.")
                     return
 
             result = process_task.result()
@@ -648,7 +669,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await thinking_task
         except Exception:
             logger.exception("Falha na chamada ao Gemini.")
-            await _safe_edit(aguarde, "⚠️ Erro ao processar sua mensagem. Tente novamente.")
+            error_text = "⚠️ Erro ao processar sua mensagem. Tente novamente."
+            await _safe_edit(aguarde, error_text)
+            try:
+                save_message(user_id, "assistant", error_text)
+            except Exception:
+                logger.exception("Falha ao salvar erro no histórico.")
             return
         finally:
             thinking_stop.set()
@@ -658,12 +684,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await thinking_task
             context.chat_data["ai_processing"] = False
 
-        # Salva a troca no histórico
+        # Salva resposta da IA no histórico
         try:
-            save_message(user_id, "user", text)
             save_message(user_id, "assistant", result["reply"])
         except Exception:
-            logger.exception("Falha ao salvar histórico.")
+            logger.exception("Falha ao salvar resposta no histórico.")
 
         # Salva atualizações de perfil detectadas pela IA
         for update_item in result.get("profile_updates") or []:
