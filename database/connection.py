@@ -19,6 +19,7 @@ def _get_pool():
             user=os.getenv("MYSQL_USER"),
             password=os.getenv("MYSQL_PASSWORD"),
             database=os.getenv("MYSQL_DATABASE"),
+            time_zone="+00:00",
         )
     return _db_pool
 

@@ -641,7 +641,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await asyncio.wait_for(asyncio.shield(process_task), timeout=_THINKING_SLOW_LIMIT_SECONDS)
             except asyncio.TimeoutError:
                 thinking_stop.set()
-                with suppress(Exception):
+                with suppress(BaseException):
                     await thinking_task
 
                 await _safe_edit(aguarde, _THINKING_SLOW_TEXT)
@@ -665,7 +665,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             thinking_stop.set()
             if not thinking_task.done():
                 thinking_task.cancel()
-                with suppress(Exception):
+                with suppress(BaseException):
                     await thinking_task
         except Exception:
             logger.exception("Falha na chamada ao Gemini.")
@@ -680,7 +680,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             thinking_stop.set()
             if not thinking_task.done():
                 thinking_task.cancel()
-                with suppress(Exception):
+                with suppress(BaseException):
                     await thinking_task
             context.chat_data["ai_processing"] = False
 
