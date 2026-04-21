@@ -246,6 +246,14 @@ async def _handle_reminder_menu_action(
     return False
 
 
+def _fallback_logic_from_reminder(reminder: dict | None) -> str | None:
+    remind_at = (reminder or {}).get("remind_at")
+    if not isinstance(remind_at, str) or not remind_at.strip():
+        return None
+    iso = remind_at.strip().replace(" ", "T")
+    return f"[LU|{iso}]"
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text = update.message.text.strip()
@@ -262,9 +270,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             aguarde = await update.message.reply_text("✍️ Ajustando lembrete...")
-            profile = get_profile(chat_id)
-            history = get_history(chat_id)
-            result = process_message(text, history, profile)
+            try:
+                profile = get_profile(chat_id)
+                history = get_history(chat_id)
+                result = process_message(text, history, profile)
+            except Exception:
+                logger.exception("Falha ao processar edição de lembrete com IA.")
+                await aguarde.edit_text(
+                    "⚠️ Não consegui processar a alteração agora. Tente novamente em instantes."
+                )
+                return
 
             current_task = get_reminder_task_by_id(chat_id, task_id)
             if not current_task:
@@ -279,7 +294,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not reminder.get("message"):
                 reminder["message"] = current_task["message"]
 
-            logic_code = result.get("logic_code")
+            logic_code = result.get("logic_code") or _fallback_logic_from_reminder(result.get("reminder"))
             translated = _translate_logic_code(logic_code, reminder, profile)
             if not translated:
                 await aguarde.edit_text(

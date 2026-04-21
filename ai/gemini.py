@@ -3,7 +3,8 @@ import json
 import logging
 import math
 import re
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import google.generativeai as genai
 from google.api_core.exceptions import ResourceExhausted, NotFound
 from dotenv import load_dotenv
@@ -118,6 +119,15 @@ def _get_selected_model(profile: dict) -> str:
     return "gemini-2.0-flash"
 
 
+def _get_user_now(profile: dict) -> str:
+    tz_name = str((profile or {}).get("timezone") or "America/Sao_Paulo").strip()
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = ZoneInfo("America/Sao_Paulo")
+    return datetime.now(timezone.utc).astimezone(tz).strftime("%Y-%m-%dT%H:%M:%S")
+
+
 def _get_model(model_name: str) -> genai.GenerativeModel:
     if model_name not in _model_cache:
         _model_cache[model_name] = genai.GenerativeModel(model_name)
@@ -152,7 +162,7 @@ def process_message(
         if not os.getenv("GEMINI_API_KEY"):
             raise RuntimeError("GEMINI_API_KEY não configurada")
 
-        now = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        now = _get_user_now(profile)
         prompt = _PROMPT.format(
             now=now,
             profile=_format_profile(profile),
