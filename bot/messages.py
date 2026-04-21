@@ -14,7 +14,6 @@ from database.queries import (
     email_existe,
     set_logado,
     set_chat_session,
-    clear_user_profile,
     save_report,
     save_reminder_task,
     get_reminder_task_by_id,
@@ -349,7 +348,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         usuario = None
         user_id = None
 
-        if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name", "restore_factory"}:
+        if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name"}:
             usuario = get_usuario(chat_id)
             if not usuario or not usuario["logado"]:
                 context.user_data.pop("awaiting", None)
@@ -365,11 +364,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             answer = (text or "").strip().lower()
             if answer in {"sim", "s", "yes", "y"}:
                 deleted = await _cleanup_chat_messages(context, context.bot, chat_id)
-                context.user_data["awaiting"] = "restore_factory"
+                context.user_data.pop("awaiting", None)
                 await update.message.reply_text(
                     f"✅ Pronto. Limpei as mensagens desta conversa no Telegram ({deleted} mensagens removidas quando possível).\n\n"
-                    "Nada foi apagado do banco. Se quiser apagar também seus dados salvos como nome, cidade, apelido e IA preferida,\n"
-                    "digite RESTAURAR TUDO."
+                    "Nada foi apagado do banco."
                 )
                 return
             if answer in {"não", "nao", "n", "no"}:
@@ -537,34 +535,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data.pop("awaiting", None)
             await update.message.reply_text(
                 f"✅ Modelo da sua conta atualizado para: {selected_model}."
-            )
-            return
-
-        if awaiting == "restore_factory":
-            if text.strip().upper() == "RESTAURAR TUDO":
-                if not usuario:
-                    await update.message.reply_text(
-                        "Para restaurar suas informações salvas, primeiro faça login com /login."
-                    )
-                    return
-
-                try:
-                    clear_user_profile(user_id)
-                    context.user_data.pop("awaiting", None)
-                    await update.message.reply_text(
-                        "✅ Restauração de fábrica concluída.\n"
-                        "Apaguei nome, cidade, apelido, IA preferida e outras preferências salvas no seu perfil.\n\n"
-                        "Se quiser, agora você pode me contar novamente o que eu devo lembrar sobre você."
-                    )
-                except Exception:
-                    logger.exception("Falha ao restaurar perfil do usuário.")
-                    await update.message.reply_text(
-                        "⚠️ Não consegui restaurar suas informações agora. Tente novamente em instantes."
-                    )
-                return
-
-            await update.message.reply_text(
-                "Se quiser apagar seus dados salvos e voltar ao padrão, digite exatamente: RESTAURAR TUDO."
             )
             return
 

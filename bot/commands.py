@@ -179,15 +179,18 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting"] = "clean_confirm"
-    await update.message.reply_text(
-        "Você tem certeza que quer apagar as mensagens visíveis desta conversa aqui no Telegram?\n\n"
-        "Responda com *sim* para limpar apenas o chat.\n"
+    prompt = await update.message.reply_text(
+        "Você tem certeza?\n\n"
+        "Responda com *sim* para apagar as mensagens visíveis desta conversa no Telegram.\n"
         "Responda com *não* para cancelar.\n\n"
-        "Se quiser também apagar seus dados salvos no banco (nome, cidade, apelido, IA preferida...),\n"
-        "eu vou te mostrar a opção de restaurar tudo depois."
+        "Isso não mexe no banco, só limpa o chat para não ficar cheio de mensagens."
         + MSG_GITHUB,
         parse_mode="Markdown",
     )
+
+    cleanup_ids = context.chat_data.setdefault("cleanup_message_ids", [])
+    if prompt.message_id not in cleanup_ids:
+        cleanup_ids.append(prompt.message_id)
 
 
 async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):

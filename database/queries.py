@@ -256,15 +256,6 @@ def clear_chat_session(chat_id: int):
     conn.close()
 
 
-def clear_user_profile(user_id: int):
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM user_profile WHERE user_id = %s", (user_id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-
 def save_report(user_id: int, issue: str, ai_reply: str, reporter_name: str | None, anonymous: bool):
     conn = get_connection()
     cursor = conn.cursor()
