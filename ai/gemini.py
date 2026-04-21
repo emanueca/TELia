@@ -12,8 +12,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 _model_cache: dict[str, genai.GenerativeModel] = {}
+_available_models_cache: set[str] | None = None
 logger = logging.getLogger(__name__)
 
 _ALLOWED_MODELS = {
@@ -21,7 +22,20 @@ _ALLOWED_MODELS = {
     "gemini-2.5-flash",
     "gemini-2.5-pro",
     "gemini-2.0-flash-lite",
+    "gemini-flash-latest",
+    "gemini-flash-lite-latest",
+    "gemini-pro-latest",
 }
+
+_PREFERRED_FALLBACKS = [
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-pro",
+    "gemini-pro-latest",
+    "gemini-flash-lite-latest",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+]
 
 _PROMPT = """Você é a TELia, uma assistente pessoal no Telegram. Responda sempre em português brasileiro, de forma natural e amigável.
 
@@ -119,6 +133,54 @@ def _get_selected_model(profile: dict) -> str:
     return "gemini-2.0-flash"
 
 
+def _get_available_models() -> set[str]:
+    global _available_models_cache
+    if _available_models_cache is not None:
+        return _available_models_cache
+
+    available: set[str] = set()
+    try:
+        for m in genai.list_models():
+            methods = getattr(m, "supported_generation_methods", []) or []
+            if "generateContent" in methods:
+                name = str(getattr(m, "name", ""))
+                if name.startswith("models/"):
+                    name = name.split("/", 1)[1]
+                if name:
+                    available.add(name)
+    except Exception:
+        logger.exception("Falha ao listar modelos Gemini disponíveis.")
+
+    _available_models_cache = available
+    return available
+
+
+def _resolve_available_model(selected_model: str) -> str:
+    available = _get_available_models()
+    if not available:
+        return selected_model
+
+    if selected_model in available:
+        return selected_model
+
+    for fallback in _PREFERRED_FALLBACKS:
+        if fallback in available:
+            logger.warning(
+                "Modelo %s indisponível para esta chave. Usando fallback %s.",
+                selected_model,
+                fallback,
+            )
+            return fallback
+
+    any_available = next(iter(available))
+    logger.warning(
+        "Modelo %s indisponível. Usando primeiro modelo disponível: %s.",
+        selected_model,
+        any_available,
+    )
+    return any_available
+
+
 def _get_user_now(profile: dict) -> str:
     tz_name = str((profile or {}).get("timezone") or "America/Sao_Paulo").strip()
     try:
@@ -170,8 +232,29 @@ def process_message(
             user_message=user_message,
         )
 
-        selected_model = _get_selected_model(profile)
-        response = _get_model(selected_model).generate_content(prompt)
+        preferred_model = _get_selected_model(profile)
+        selected_model = _resolve_available_model(preferred_model)
+
+        candidates = [selected_model]
+        for fallback in _PREFERRED_FALLBACKS:
+            if fallback not in candidates:
+                candidates.append(fallback)
+
+        response = None
+        last_not_found = None
+        for model_name in candidates:
+            try:
+                response = _get_model(model_name).generate_content(prompt)
+                break
+            except NotFound as exc:
+                last_not_found = exc
+                logger.warning("Modelo %s indisponível em runtime. Tentando próximo fallback.", model_name)
+                continue
+
+        if response is None:
+            if last_not_found:
+                raise last_not_found
+            raise RuntimeError("Nenhum modelo Gemini disponível para generate_content")
         raw = response.text or ""
 
         if not raw:

@@ -123,7 +123,7 @@ def _next_weekly_run(time_str: str, days_csv: str, tz_name: str) -> datetime | N
 
 
 def _translate_logic_code(logic_code: str, reminder: dict | None, profile: dict | None) -> dict | None:
-    if not logic_code:
+    if not logic_code or not isinstance(logic_code, str):
         return None
 
     cleaned = logic_code.strip()
@@ -254,6 +254,40 @@ def _fallback_logic_from_reminder(reminder: dict | None) -> str | None:
     return f"[LU|{iso}]"
 
 
+def _logic_from_informal_text(user_text: str, current_task: dict | None, profile: dict | None) -> str | None:
+    text = (user_text or "").strip().lower()
+    tz_name = _get_user_timezone(profile)
+    now_local = datetime.now(ZoneInfo(tz_name)).replace(second=0, microsecond=0)
+
+    rel = re.search(r"(?:daqui\s*(?:a\s*)?|a\s*partir\s*de\s*agora\s*)(\d+)\s*(minuto|minutos|min|hora|horas|h)\b", text)
+    if rel:
+        amount = int(rel.group(1))
+        unit = rel.group(2)
+        delta = timedelta(hours=amount) if unit.startswith("h") or "hora" in unit else timedelta(minutes=amount)
+        target = now_local + delta
+        return f"[LU|{target.strftime('%Y-%m-%dT%H:%M:%S')}]"
+
+    abs_match = re.search(r"(?:às|as)?\s*(\d{1,2})[:h](\d{2})\b", text)
+    if abs_match:
+        hour = int(abs_match.group(1))
+        minute = int(abs_match.group(2))
+        if hour > 23 or minute > 59:
+            return None
+
+        if (current_task or {}).get("kind") == "LR":
+            recurrence = str((current_task or {}).get("recurrence_rule") or "DAILY").upper()
+            if recurrence != "DAILY" and not recurrence.startswith("WEEKLY:"):
+                recurrence = "DAILY"
+            return f"[LR|{hour:02d}:{minute:02d}|{recurrence}]"
+
+        target = now_local.replace(hour=hour, minute=minute)
+        if target <= now_local:
+            target = target + timedelta(days=1)
+        return f"[LU|{target.strftime('%Y-%m-%dT%H:%M:%S')}]"
+
+    return None
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text = update.message.text.strip()
@@ -294,12 +328,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not reminder.get("message"):
                 reminder["message"] = current_task["message"]
 
-            logic_code = result.get("logic_code") or _fallback_logic_from_reminder(result.get("reminder"))
+            logic_code = result.get("logic_code")
+            if not isinstance(logic_code, str):
+                logic_code = None
+            if not logic_code:
+                logic_code = _fallback_logic_from_reminder(result.get("reminder"))
+            if not logic_code:
+                logic_code = _logic_from_informal_text(text, current_task, profile)
+
             translated = _translate_logic_code(logic_code, reminder, profile)
             if not translated:
                 await aguarde.edit_text(
                     "Não consegui entender o novo formato desse lembrete.\n"
-                    "Tente algo como: `todo dia às 19:00` ou `segunda e sexta às 08:30`."
+                    "Tente algo como: `todo dia às 19:00`, `segunda e sexta às 08:30` ou `daqui a 15 minutos`."
                 )
                 return
 

@@ -29,24 +29,27 @@ _FORM_CADASTRAR = (
 )
 
 AI_MODEL_OPTIONS = {
-    "1": ("Flash 2.0 (recomendado)", "gemini-2.0-flash"),
+    "1": ("Flash (recomendado)", "gemini-flash-latest"),
     "2": ("Flash 2.5 (mais inteligente)", "gemini-2.5-flash"),
     "3": ("Pro 2.5 (qualidade maxima)", "gemini-2.5-pro"),
-    "4": ("Flash-Lite 2.0 (economico)", "gemini-2.0-flash-lite"),
+    "4": ("Flash-Lite (economico)", "gemini-flash-lite-latest"),
 }
 
 _AI_MODEL_ALIASES = {
-    "flash": "gemini-2.0-flash",
-    "flash2": "gemini-2.0-flash",
-    "flash2.0": "gemini-2.0-flash",
+    "flash": "gemini-flash-latest",
+    "flash2": "gemini-flash-latest",
+    "flash2.0": "gemini-flash-latest",
     "gemini-2.0-flash": "gemini-2.0-flash",
     "gemini-2.5-flash": "gemini-2.5-flash",
     "flash2.5": "gemini-2.5-flash",
     "pro": "gemini-2.5-pro",
     "gemini-2.5-pro": "gemini-2.5-pro",
-    "flash-lite": "gemini-2.0-flash-lite",
-    "flashlite": "gemini-2.0-flash-lite",
+    "flash-lite": "gemini-flash-lite-latest",
+    "flashlite": "gemini-flash-lite-latest",
     "gemini-2.0-flash-lite": "gemini-2.0-flash-lite",
+    "gemini-flash-latest": "gemini-flash-latest",
+    "gemini-flash-lite-latest": "gemini-flash-lite-latest",
+    "gemini-pro-latest": "gemini-pro-latest",
 }
 
 
@@ -378,11 +381,11 @@ async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [["1", "2"], ["3", "4"]]
     await update.message.reply_text(
         "Escolha o modelo da IA para sua conta (responda com 1, 2, 3 ou 4):\n\n"
-        "1. Flash 2.0: rapido, equilibrado e com boa cota gratis\n"
+        "1. Flash: rapido, equilibrado e com boa cota gratis\n"
         "2. Flash 2.5: mais inteligente mantendo boa velocidade\n"
         "3. Pro 2.5: respostas de alta qualidade, mas cota menor\n"
-        "4. Flash-Lite 2.0: super rapido e economico de cota\n\n"
-        "Se nao escolher nada, o padrao continua sendo gemini-2.0-flash.",
+        "4. Flash-Lite: super rapido e economico de cota\n\n"
+        "Se nao escolher nada, o padrao continua sendo gemini-flash-latest.",
         reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True),
     )
 
