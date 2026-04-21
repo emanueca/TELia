@@ -463,6 +463,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reminder = result.get("reminder")
         logic_code = result.get("logic_code")
 
+        saved_task = None
+
         if logic_code:
             task = _translate_logic_code(logic_code, reminder, profile)
             if task:
@@ -476,23 +478,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         next_run_at=task["next_run_at"],
                         timezone=task["timezone"],
                     )
-                    tipo = "recorrente" if task["kind"] == "LR" else "único"
-                    resposta = (
-                        f"{result['reply']}\n\n"
-                        f"✅ Lembrete {tipo} salvo para *{task['display_run_at']}* ({task['timezone']})."
-                    )
-                    await aguarde.edit_text(resposta, parse_mode="Markdown")
-                    return
+                    saved_task = task
                 except Exception:
                     logger.exception("Falha ao salvar reminder_tasks.")
 
-        if reminder:
+        if not saved_task and reminder:
             try:
                 fallback_logic = _fallback_logic_from_reminder(reminder)
                 task = _translate_logic_code(fallback_logic, reminder, profile) if fallback_logic else None
                 if not task:
                     raise ValueError("não foi possível converter reminder em reminder_task")
-
                 save_reminder_task(
                     user_id=user_id,
                     kind=task["kind"],
@@ -502,13 +497,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     next_run_at=task["next_run_at"],
                     timezone=task["timezone"],
                 )
-                resposta = f"{result['reply']}\n\n✅ Lembrete salvo para *{task['display_run_at']}* ({task['timezone']})."
-                await aguarde.edit_text(resposta, parse_mode="Markdown")
+                saved_task = task
             except Exception:
                 logger.exception("Falha ao salvar lembrete.")
-                await aguarde.edit_text(
-                    result["reply"] + "\n\n⚠️ Não consegui salvar o lembrete. Tente novamente."
-                )
+
+        if saved_task:
+            tipo = "recorrente" if saved_task["kind"] == "LR" else "único"
+            resposta = (
+                f"{result['reply']}\n\n"
+                f"✅ Lembrete {tipo} salvo para *{saved_task['display_run_at']}* ({saved_task['timezone']})."
+            )
+            await aguarde.edit_text(resposta, parse_mode="Markdown")
+        elif reminder:
+            await aguarde.edit_text(
+                result["reply"] + "\n\n⚠️ Não consegui salvar o lembrete. Tente novamente."
+            )
         else:
             await aguarde.edit_text(result["reply"])
 

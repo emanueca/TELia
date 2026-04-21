@@ -266,6 +266,10 @@ def save_reminder_task(
 ):
     conn = get_connection()
     cursor = conn.cursor()
+    # Guarda contra duplicata: se já existe um lembrete ativo com o mesmo
+    # schedule_code para o mesmo usuário, não insere novamente. Isso evita
+    # duplicatas causadas por reenvio de updates do Telegram ou falha parcial
+    # no fluxo de resposta.
     cursor.execute(
         """
         INSERT INTO reminder_tasks (
@@ -278,9 +282,15 @@ def save_reminder_task(
             next_run_at,
             active
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE)
+        SELECT %s, %s, %s, %s, %s, %s, %s, TRUE
+        FROM DUAL
+        WHERE NOT EXISTS (
+            SELECT 1 FROM reminder_tasks
+            WHERE user_id = %s AND schedule_code = %s AND active = TRUE
+        )
         """,
-        (user_id, kind, message, schedule_code, recurrence_rule, timezone, next_run_at),
+        (user_id, kind, message, schedule_code, recurrence_rule, timezone, next_run_at,
+         user_id, schedule_code),
     )
     conn.commit()
     cursor.close()
@@ -292,6 +302,9 @@ def get_due_reminder_tasks(limit: int = 100) -> list[dict]:
     cursor = conn.cursor(dictionary=True)
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     if _table_exists(cursor, "chat_sessions"):
+        # O MIN(cs.chat_id) garante exatamente uma linha por usuário mesmo que
+        # dois registros de chat_sessions tenham o mesmo updated_at (empate),
+        # evitando entrega duplicada do lembrete.
         cursor.execute(
             """
             SELECT
@@ -307,14 +320,17 @@ def get_due_reminder_tasks(limit: int = 100) -> list[dict]:
                 rt.active
             FROM reminder_tasks rt
             INNER JOIN (
-                SELECT user_id, MAX(updated_at) AS max_updated
-                FROM chat_sessions
-                GROUP BY user_id
-            ) latest
-                ON latest.user_id = rt.user_id
-            INNER JOIN chat_sessions cs
-                ON cs.user_id = latest.user_id
-               AND cs.updated_at = latest.max_updated
+                SELECT cs1.user_id, MIN(cs1.chat_id) AS chat_id
+                FROM chat_sessions cs1
+                INNER JOIN (
+                    SELECT user_id, MAX(updated_at) AS max_updated
+                    FROM chat_sessions
+                    GROUP BY user_id
+                ) latest
+                    ON cs1.user_id = latest.user_id
+                   AND cs1.updated_at = latest.max_updated
+                GROUP BY cs1.user_id
+            ) cs ON cs.user_id = rt.user_id
             WHERE rt.active = TRUE
               AND rt.next_run_at <= %s
             ORDER BY rt.next_run_at ASC
