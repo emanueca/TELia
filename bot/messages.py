@@ -14,7 +14,6 @@ from database.queries import (
     email_existe,
     set_logado,
     set_chat_session,
-    save_reminder,
     save_reminder_task,
     get_reminder_task_by_id,
     deactivate_reminder_task,
@@ -489,8 +488,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if reminder:
             try:
-                save_reminder(user_id, reminder["message"], reminder["remind_at"])
-                resposta = f"{result['reply']}\n\n✅ Lembrete salvo para *{reminder['remind_at']}*."
+                fallback_logic = _fallback_logic_from_reminder(reminder)
+                task = _translate_logic_code(fallback_logic, reminder, profile) if fallback_logic else None
+                if not task:
+                    raise ValueError("não foi possível converter reminder em reminder_task")
+
+                save_reminder_task(
+                    user_id=user_id,
+                    kind=task["kind"],
+                    message=task["message"],
+                    schedule_code=task["schedule_code"],
+                    recurrence_rule=task["recurrence_rule"],
+                    next_run_at=task["next_run_at"],
+                    timezone=task["timezone"],
+                )
+                resposta = f"{result['reply']}\n\n✅ Lembrete salvo para *{task['display_run_at']}* ({task['timezone']})."
                 await aguarde.edit_text(resposta, parse_mode="Markdown")
             except Exception:
                 logger.exception("Falha ao salvar lembrete.")

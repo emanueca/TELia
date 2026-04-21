@@ -32,13 +32,13 @@ def _ensure_pending_index(cursor):
         SELECT COUNT(1)
         FROM information_schema.statistics
         WHERE table_schema = DATABASE()
-          AND table_name = 'reminders'
-                    AND index_name = 'idx_pending_sent_remind_at'
+          AND table_name = 'reminder_tasks'
+          AND index_name = 'idx_reminder_tasks_due'
         """
     )
     if cursor.fetchone()[0] == 0:
         cursor.execute(
-            "CREATE INDEX idx_pending_sent_remind_at ON reminders (sent, remind_at)"
+            "CREATE INDEX idx_reminder_tasks_due ON reminder_tasks (active, next_run_at)"
         )
 
 def init_db():
@@ -62,17 +62,6 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
             INDEX idx_chat_sessions_user (user_id)
-        )
-    """)
-
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS reminders (
-            id         INT AUTO_INCREMENT PRIMARY KEY,
-            user_id    BIGINT NOT NULL,
-            message    TEXT NOT NULL,
-            remind_at  DATETIME NOT NULL,
-            sent       BOOLEAN NOT NULL DEFAULT FALSE,
-            FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE
         )
     """)
 

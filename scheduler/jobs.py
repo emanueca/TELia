@@ -5,12 +5,7 @@ from zoneinfo import ZoneInfo
 from telegram.ext import ContextTypes
 
 from database.connection import init_db
-from database.queries import (
-    get_pending_reminders,
-    mark_as_sent,
-    get_due_reminder_tasks,
-    mark_reminder_task_sent,
-)
+from database.queries import get_due_reminder_tasks, mark_reminder_task_sent
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TZ = "America/Sao_Paulo"
@@ -121,19 +116,6 @@ async def _check_reminders(context: ContextTypes.DEFAULT_TYPE):
     try:
         logger.info("[scheduler] Verificando lembretes pendentes...")
 
-        reminders = get_pending_reminders()
-        sent_legacy = 0
-        for reminder in reminders:
-            try:
-                await context.bot.send_message(
-                    chat_id=reminder["chat_id"],
-                    text=f"Lembrete: {reminder['message']}",
-                )
-                mark_as_sent(reminder["id"])
-                sent_legacy += 1
-            except Exception as e:
-                logger.exception(f"Erro ao enviar lembrete {reminder['id']}: {e}")
-
         tasks = get_due_reminder_tasks()
         sent_tasks = 0
         for task in tasks:
@@ -156,9 +138,7 @@ async def _check_reminders(context: ContextTypes.DEFAULT_TYPE):
                 logger.exception(f"Erro ao enviar reminder_task {task['id']}: {e}")
 
         logger.info(
-            "[scheduler] Ciclo concluído. legacy_due=%s sent_legacy=%s tasks_due=%s sent_tasks=%s",
-            len(reminders),
-            sent_legacy,
+            "[scheduler] Ciclo concluído. tasks_due=%s sent_tasks=%s",
             len(tasks),
             sent_tasks,
         )

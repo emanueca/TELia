@@ -159,7 +159,7 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  💾 TELia SALVA no BD:\n"
         "       ├─ conversation_history (sua msg + resposta)\n"
         "       ├─ user_profile (dados aprendidos)\n"
-        "       └─ reminders (se foi um lembrete)\n"
+        "       └─ reminder_tasks (se foi um lembrete)\n"
         "       ↓\n"
         "  📤 Resposta enviada para você\n"
         "```",
