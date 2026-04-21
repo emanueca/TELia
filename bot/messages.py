@@ -1,7 +1,9 @@
+import asyncio
 import hashlib
 import logging
 import re
 from datetime import datetime, timedelta, timezone
+from contextlib import suppress
 from zoneinfo import ZoneInfo
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -29,6 +31,14 @@ from ai.gemini import process_message, process_report_issue
 
 logger = logging.getLogger(__name__)
 _DEFAULT_TZ = "America/Sao_Paulo"
+_THINKING_FRAMES = ["✍️ Cozinhando.", "✍️ Cozinhando..", "✍️ Cozinhando...", "✍️ Cozinhando.."]
+_THINKING_ANIMATION_INTERVAL = 2.5
+_THINKING_SLOW_LIMIT_SECONDS = 300
+_THINKING_CANCEL_LIMIT_SECONDS = 480
+_THINKING_SLOW_TEXT = "✍️ Receita difícil essa ein..."
+_THINKING_TIMEOUT_TEXT = (
+    "opss... Parece que queimei o pedido, envie um relatório sobre isso ou tente novamente mais tarde."
+)
 
 
 async def _safe_edit(msg, text: str, parse_mode: str | None = None):
@@ -104,6 +114,20 @@ async def _cleanup_chat_messages(context: ContextTypes.DEFAULT_TYPE, bot, chat_i
         except Exception:
             pass
     return deleted
+
+
+async def _animate_waiting_message(msg, stop_event: asyncio.Event):
+    frame_index = 0
+    try:
+        while not stop_event.is_set():
+            await _safe_edit(msg, _THINKING_FRAMES[frame_index])
+            frame_index = (frame_index + 1) % len(_THINKING_FRAMES)
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=_THINKING_ANIMATION_INTERVAL)
+            except asyncio.TimeoutError:
+                continue
+    except asyncio.CancelledError:
+        raise
 
 
 def _to_datetime(value) -> datetime | None:
@@ -575,17 +599,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # ── Conversa com IA ───────────────────────────────────
-        aguarde = await update.message.reply_text("✍️ Pensando...")
+        aguarde = await update.message.reply_text("✍️ Cozinhando.")
         _remember_chat_message(context, aguarde.message_id)
+
+        thinking_stop = asyncio.Event()
+        thinking_task = asyncio.create_task(_animate_waiting_message(aguarde, thinking_stop))
 
         try:
             history = get_history(user_id)
             profile = get_profile(user_id)
-            result = process_message(text, history, profile)
+
+            process_task = asyncio.create_task(asyncio.to_thread(process_message, text, history, profile))
+
+            try:
+                await asyncio.wait_for(asyncio.shield(process_task), timeout=_THINKING_SLOW_LIMIT_SECONDS)
+            except asyncio.TimeoutError:
+                thinking_stop.set()
+                with suppress(Exception):
+                    await thinking_task
+
+                await _safe_edit(aguarde, _THINKING_SLOW_TEXT)
+
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(process_task),
+                        timeout=_THINKING_CANCEL_LIMIT_SECONDS - _THINKING_SLOW_LIMIT_SECONDS,
+                    )
+                except asyncio.TimeoutError:
+                    process_task.cancel()
+                    await _safe_edit(aguarde, _THINKING_TIMEOUT_TEXT)
+                    return
+
+            result = process_task.result()
+
+            thinking_stop.set()
+            if not thinking_task.done():
+                thinking_task.cancel()
+                with suppress(Exception):
+                    await thinking_task
         except Exception:
             logger.exception("Falha na chamada ao Gemini.")
             await _safe_edit(aguarde, "⚠️ Erro ao processar sua mensagem. Tente novamente.")
             return
+        finally:
+            thinking_stop.set()
+            if not thinking_task.done():
+                thinking_task.cancel()
+                with suppress(Exception):
+                    await thinking_task
 
         # Salva a troca no histórico
         try:
