@@ -65,17 +65,6 @@ def init_db():
         )
     """)
 
-    # Migra sessões legadas: no modelo antigo o chat_id era também o id da conta.
-    cursor.execute(
-        """
-        INSERT INTO chat_sessions (chat_id, user_id)
-        SELECT chat_id, chat_id
-        FROM users
-        WHERE is_logged_in = TRUE
-        ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)
-        """
-    )
-
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS reminders (
             id         INT AUTO_INCREMENT PRIMARY KEY,
