@@ -20,3 +20,24 @@
 - Cancelamento de task em asyncio precisa considerar `CancelledError`.
 - Não confiar só no salvamento final do fluxo para histórico; salvar a mensagem do usuário antes da chamada externa reduz perda de dados.
 - Quando houver animação/placeholder assíncrono, o cancelamento precisa ser tratado com cuidado para não quebrar o handler principal.
+
+## Bug crítico: horário do banco desalinhado com o horário esperado
+
+### Sintoma
+- As datas salvas no banco pareciam atrasadas ou fora do fuso esperado.
+- A IA, porém, continuava mostrando a hora correta para o usuário.
+
+### Causa raiz
+- O banco estava dependente do `@@time_zone = 'SYSTEM'`, então o horário variava conforme a configuração do servidor.
+- As colunas `created_at` e `updated_at` usam `CURRENT_TIMESTAMP`, então qualquer desalinhamento de timezone no MySQL afeta os registros.
+- A hora mostrada pela IA não depende do banco; ela é calculada pelo fuso salvo no perfil do usuário.
+
+### Correção aplicada
+- Forçar `time_zone = '+00:00'` na pool de conexão do MySQL em [database/connection.py](database/connection.py).
+- Confirmar `@@session.time_zone = +00:00` para manter todas as conexões em UTC.
+- Manter a conversão de horários da aplicação como estava, especialmente no fluxo de lembretes e na IA.
+
+### Lições
+- Banco e aplicação não precisam usar o mesmo fuso visual, mas o banco deve ficar consistente internamente.
+- Para evitar confusão, salvar no banco em UTC e exibir em fuso local na aplicação é a abordagem mais segura.
+- Se a IA já calcula o horário pelo perfil do usuário, mexer no timezone do banco não deve quebrar a lógica dela.
