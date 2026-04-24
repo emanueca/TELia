@@ -1,0 +1,22 @@
+## Bug crítico: resposta da IA travava e não voltava para o usuário
+
+### Sintoma
+- O bot mostrava `✍️ Cozinhando...` e depois parava.
+- O usuário podia enviar mais mensagens, mas a resposta principal não voltava.
+- Em alguns casos parecia que o histórico tinha sido salvo, mas a resposta final não aparecia.
+
+### Causa raiz
+- O fluxo usa uma `thinking_task` para animar os pontos enquanto a IA responde.
+- Quando a IA demora demais, essa task é cancelada.
+- O código aguardava a task cancelada com `suppress(Exception)`, mas em Python `asyncio.CancelledError` não é tratado como `Exception` em vários cenários.
+- O erro vazava do bloco de controle e impedia a continuação do fluxo, bloqueando o `save_message` e a resposta final.
+
+### Correção aplicada
+- Trocar `suppress(Exception)` por `suppress(BaseException)` nos pontos onde a `thinking_task` cancelada é aguardada.
+- Garantir que o estado `ai_processing` seja liberado no `finally`.
+- Persistir a mensagem do usuário antes da chamada da IA para não perder histórico em caso de timeout.
+
+### Lições
+- Cancelamento de task em asyncio precisa considerar `CancelledError`.
+- Não confiar só no salvamento final do fluxo para histórico; salvar a mensagem do usuário antes da chamada externa reduz perda de dados.
+- Quando houver animação/placeholder assíncrono, o cancelamento precisa ser tratado com cuidado para não quebrar o handler principal.
