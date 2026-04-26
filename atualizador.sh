@@ -13,6 +13,18 @@ echo "📦 2. Sincronizando bibliotecas..."
 source .venv/bin/activate || echo "⚠️ Alerta: Ambiente virtual não encontrado!"
 pip install -r requirements.txt --quiet
 
+echo "🌐 Verificando browser do Playwright..."
+if ! python3 -c "
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    p.chromium.executable_path
+" 2>/dev/null; then
+    echo "   Browser ausente — baixando Chromium..."
+    playwright install chromium
+else
+    echo "   Browser ok."
+fi
+
 echo "💀 3. Faxina de processos (Exorcizando fantasmas)..."
 
 # 1. Mata os processos Python (Cérebro do Bot)
