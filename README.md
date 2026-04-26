@@ -27,6 +27,24 @@ link telegram:
 4. `/login` → entra na conta
 5. A partir daí, mensagens livres são processadas pela IA e viram lembretes
 
+## Reserva automática do RU
+
+O modo IFFar pode usar automação com Playwright para reservar o almoço do RU de forma programada.
+
+Fluxo resumido:
+
+1. O usuário escolhe o modo IFFar no `/modo`.
+2. A TELia salva as credenciais e preferências ligadas ao usuário logado.
+3. Um job agendado chama o Playwright no servidor.
+4. O Playwright abre o portal do RU, faz login e tenta executar a reserva.
+5. Se der certo, a TELia avisa o usuário no Telegram e pode guardar o comprovante ou status da execução.
+
+Observações:
+
+1. O pacote `playwright` precisa ser instalado via `pip`.
+2. Os navegadores do Playwright também precisam ser instalados no servidor com `playwright install chromium`.
+3. Se o portal do IFFar usar captcha, bloqueio forte ou fluxo muito diferente, a automação pode quebrar e exigir ajuste.
+
 ## Estrutura do projeto
 
 ```

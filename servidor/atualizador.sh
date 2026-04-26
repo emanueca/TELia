@@ -1,46 +1,64 @@
 #!/bin/bash
-set -euo pipefail
+clear
+echo "==========================================================="
+echo "🚀 TELia - SISTEMA DE DEPLOY AUTOMÁTICO"
+echo "==========================================================="
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-echo "=========================================="
-echo "🚀 INICIANDO ATUALIZAÇÃO DA TELIA..."
-echo "=========================================="
-
-echo "🔄 1. Puxando código novo do GitHub..."
-cd "$ROOT_DIR"
+echo "🔄 1. Puxando novidades do GitHub..."
+cd "/home/emanueca/Telegramia/TELia"
 git pull origin main
 
-echo "📦 2. Atualizando bibliotecas..."
-if [[ ! -d ".venv" ]]; then
-	echo "❌ Ambiente virtual .venv não encontrado em $ROOT_DIR"
-	exit 1
-fi
-source .venv/bin/activate
-pip install -r requirements.txt
+echo "📦 2. Sincronizando bibliotecas..."
+# Tenta ativar o ambiente. Se falhar, avisa o usuário.
+source .venv/bin/activate || echo "⚠️ Alerta: Ambiente virtual não encontrado!"
+pip install -r requirements.txt --quiet
 
-echo "♻️  3. Reiniciando o motor..."
-# Encerra tanto o launcher quanto o processo direto do bot.
-pkill -f "start_server.py" || true
-pkill -f "python.*main.py" || true
+echo "💀 3. Faxina de processos (Exorcizando fantasmas)..."
+
+# 1. Mata os processos Python (Cérebro do Bot)
+pkill -9 -f "main.py"
+pkill -9 -f "start_server.py"
+
+# 2. Mata todas as sessões do Screen que tenham 'telia' no nome
+# Isso garante que não sobre nenhuma "sala" aberta
+screen -ls | grep "\.telia" | cut -d. -f1 | awk '{print $1}' | xargs -r kill
+
+# 3. Limpa as telas que ficaram com status 'Dead' (Lixo do sistema)
+screen -wipe > /dev/null 2>&1
+
+sleep 2
+
+echo "🚀 4. Iniciando a TELia em uma nova sessão screen..."
+# Inicia o bot em uma sessão chamada 'telia' de forma "desconectada" (-d -m)
+screen -d -m -S telia bash -c "source .venv/bin/activate && python3 start_server.py"
+
+echo "✅ Deploy concluído! O bot já está rodando em segundo plano."
+echo "Para ver o que está acontecendo, digite: screen -r telia"
+
+echo "✅ Deploy concluído com sucesso!"
 
 echo ""
 echo "==========================================================="
-echo "✅ DEPLOY CONCLUÍDO! O código novo já está rodando."
+echo "🛠️  MANUAL DE SOBREVIVÊNCIA DO SERVIDOR"
 echo "==========================================================="
-echo "🛠️  GUIA RÁPIDO DO SERVIDOR:"
+echo "❌ ERRO 'COMMAND NOT FOUND'?"
+echo "   Isso acontece porque o Python está 'escondido' no ambiente."
+echo "   Sempre rode: source .venv/bin/activate"
 echo ""
-echo "👀 COMO VER A TELA DO BOT (Logs ao vivo):"
-echo "   Digite: screen -r telia"
+echo "📝 DICAS DO EDITOR NANO (Para editar arquivos):"
+echo "   - Para SALVAR: Aperte Ctrl + O e depois ENTER"
+echo "   - Para SAIR:   Aperte Ctrl + X"
 echo ""
-echo "🚪 COMO SAIR DA TELA SEM DESLIGAR O BOT:"
-echo "   No teclado: Aperte 'Ctrl + A', solte, e aperte 'D'"
+echo "📺 VER LOGS/TELA DO BOT:"
+echo "   Execute: screen -r telia"
 echo ""
-echo "🔌 SE O SERVIDOR DESLIGAR (Queda de energia/Reboot):"
-echo "   Para ligar tudo do zero, rode em ordem:"
-echo "   1) cd $ROOT_DIR"
-echo "   2) source .venv/bin/activate"
-echo "   3) screen -S telia"
-echo "   4) python start_server.py"
+echo "🚪 SAIR DA TELA (SEM DESLIGAR):"
+echo "   No teclado: Ctrl + A, depois D"
+echo ""
+echo "🔌 O SERVIDOR REINICIOU? (COMO LIGAR TUDO):"
+echo "   1. cd /home/emanueca/Telegramia/TELia"
+echo "   2. source .venv/bin/activate  (Resolve o 'command not found')"
+echo "   3. screen -S telia"
+echo "   4. python start_server.py"
 echo "==========================================================="
+

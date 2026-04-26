@@ -41,6 +41,12 @@ EXIT;
 git clone https://github.com/emanueca/TELia.git
 cd TELia
 
+-- Opcional (recomendado): instalar o comando setuptelia e deixar o setup automatico.
+chmod +x servidor/setuptelia.sh servidor/instalar_setuptelia.sh
+./servidor/instalar_setuptelia.sh
+source ~/.bashrc
+setuptelia
+
 
 ------------------------------------------------------------
 6. CRIAR O AMBIENTE VIRTUAL PYTHON
@@ -53,6 +59,12 @@ source .venv/bin/activate
 7. INSTALAR AS DEPENDÊNCIAS
 ------------------------------------------------------------
 pip install -r requirements.txt
+
+-- Se você for usar a automação do RU com Playwright, rode também:
+playwright install chromium
+
+-- Em alguns Linux, pode ser necessário:
+playwright install-deps
 
 
 ------------------------------------------------------------
@@ -85,6 +97,9 @@ python main.py
 10. RODAR O BOT EM SEGUNDO PLANO (para ficar ligado 24/7)
 ------------------------------------------------------------
 nohup python main.py > telia.log 2>&1 &
+
+-- A automação do RU, quando ativa, roda em jobs separados e usa o Playwright no servidor.
+-- Ela depende da conta já estar configurada no modo IFFar e com as credenciais salvas no banco.
 
 -- Para ver os logs em tempo real:
 tail -f telia.log
