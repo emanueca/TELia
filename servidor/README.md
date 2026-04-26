@@ -4,7 +4,7 @@ This folder contains automation scripts for deploy/update on the server.
 
 ## Files
 
-- `atualizador.sh`: pulls latest code, updates dependencies, and restarts TELia process.
+- `atualizador.sh`: pulls latest code from the repo root, updates dependencies, and restarts TELia.
 - `instalar_commitauto.sh`: installs alias `commitauto` in the current user's `.bashrc`.
 
 ## How to use on server
@@ -12,13 +12,13 @@ This folder contains automation scripts for deploy/update on the server.
 1. Give execute permission:
 
 ```bash
-chmod +x sys/atualizador.sh sys/instalar_commitauto.sh
+chmod +x servidor/atualizador.sh servidor/instalar_commitauto.sh
 ```
 
 2. Install alias command:
 
 ```bash
-./sys/instalar_commitauto.sh
+./servidor/instalar_commitauto.sh
 source ~/.bashrc
 ```
 
