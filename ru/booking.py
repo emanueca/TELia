@@ -2,12 +2,12 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import async_playwright, Page, Browser
 
 logger = logging.getLogger(__name__)
 
-_RU_BASE   = "https://ru.fw.iffarroupilha.edu.br"
-_APP_URL   = _RU_BASE + "/sifw/"
+_RU_BASE = "https://ru.fw.iffarroupilha.edu.br"
+_APP_URL = _RU_BASE + "/sifw/"
 _AGENDA_URL = _RU_BASE + "/sifw/app/agendamento.xhtml"
 
 _LAUNCH_ARGS = [
@@ -30,7 +30,8 @@ def _dbg(html: str, name: str) -> None:
         pass
 
 
-async def _launch_browser():
+async def _launch_browser() -> tuple:
+    """Returns (playwright, browser)."""
     pw = await async_playwright().start()
     browser = await pw.chromium.launch(headless=True, args=_LAUNCH_ARGS)
     return pw, browser
@@ -168,7 +169,14 @@ async def _book_single_day(page: Page, date_value: str) -> bool:
         )
         if btn_sim:
             await btn_sim.click()
-            await page.wait_for_timeout(2000)
+            
+            # Boa prática com PrimeFaces: esperar o overlay/spinner de loading sumir
+            try:
+                await page.wait_for_selector(".ui-widget-overlay", state="hidden", timeout=5000)
+            except Exception:
+                pass
+                
+            await page.wait_for_timeout(1000)
             return True
     except Exception as e:
         logger.warning("Botão 'Sim' não apareceu para dia %s: %s", date_value, e)
@@ -179,11 +187,14 @@ async def _book_single_day(page: Page, date_value: str) -> bool:
 # ── API pública ─────────────────────────────────────────────────────────────
 
 async def login_and_get_days(cpf: str, senha: str) -> dict:
+    """
+    Login to RU portal and return available days for scheduling.
+
+    Returns:
+        success (bool), error (str|None), available_days (list[str]), raw_days (list[dict])
+    """
     pw, browser = await _launch_browser()
-    ctx = await browser.new_context(
-        viewport={"width": 1280, "height": 800},
-        ignore_https_errors=True,
-    )
+    ctx = await browser.new_context(viewport={"width": 1024, "height": 768})
     page = await ctx.new_page()
     try:
         ok, err = await _do_login(page, cpf, senha)
@@ -207,8 +218,13 @@ async def login_and_get_days(cpf: str, senha: str) -> dict:
             "raw_days": days,
         }
     except Exception as e:
-        logger.exception("Erro em login_and_get_days.")
-        return {"success": False, "error": str(e), "available_days": [], "raw_days": []}
+        logger.exception("Erro ao fazer login/buscar dias no RU.")
+        return {
+            "success": False,
+            "error": str(e),
+            "available_days": [],
+            "raw_days": [],
+        }
     finally:
         await ctx.close()
         await browser.close()
@@ -216,11 +232,14 @@ async def login_and_get_days(cpf: str, senha: str) -> dict:
 
 
 async def book_days(cpf: str, senha: str, selected_values: list[str]) -> dict:
+    """
+    Login to RU portal and book the specified days.
+
+    selected_values: list of 'value' strings from raw_days returned by login_and_get_days.
+    Returns: success (bool), booked (list), failed (list), error (str|None)
+    """
     pw, browser = await _launch_browser()
-    ctx = await browser.new_context(
-        viewport={"width": 1280, "height": 800},
-        ignore_https_errors=True,
-    )
+    ctx = await browser.new_context(viewport={"width": 1024, "height": 768})
     page = await ctx.new_page()
     try:
         ok, err = await _do_login(page, cpf, senha)
@@ -247,10 +266,20 @@ async def book_days(cpf: str, senha: str, selected_values: list[str]) -> dict:
             await page.wait_for_timeout(1500)
 
         _dbg(await page.content(), "05_after_booking")
-        return {"success": True, "error": None, "booked": booked, "failed": failed}
+        return {
+            "success": True,
+            "error": None,
+            "booked": booked,
+            "failed": failed,
+        }
     except Exception as e:
-        logger.exception("Erro em book_days.")
-        return {"success": False, "error": str(e), "booked": [], "failed": selected_values}
+        logger.exception("Erro ao reservar dias no RU.")
+        return {
+            "success": False,
+            "error": str(e),
+            "booked": [],
+            "failed": selected_values,
+        }
     finally:
         await ctx.close()
         await browser.close()
