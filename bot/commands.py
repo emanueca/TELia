@@ -75,6 +75,26 @@ def _format_task_next_run(task: dict) -> str:
         return str(next_run)
 
 
+_DAY_LABELS = {
+    "MON": "Seg", "TUE": "Ter", "WED": "Qua",
+    "THU": "Qui", "FRI": "Sex", "SAT": "Sáb", "SUN": "Dom",
+}
+
+
+def _format_recurrence(task: dict) -> str:
+    """Returns a human-readable recurrence badge for a reminder task."""
+    if task.get("kind") == "LU":
+        return "🔔 Único"
+    schedule = str(task.get("schedule_code") or "")
+    if "|DAILY" in schedule:
+        return "🔁 Diário"
+    if "|WEEKLY:" in schedule:
+        days_part = schedule.split("|WEEKLY:", 1)[1].rstrip("]")
+        labels = [_DAY_LABELS.get(d.strip(), d.strip()) for d in days_part.split(",")]
+        return f"🔁 {', '.join(labels)}"
+    return "🔁 Recorrente"
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting", None)
     await update.message.reply_text(
@@ -306,11 +326,12 @@ async def lembretes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = []
     for i, task in enumerate(tasks, start=1):
         when = _format_task_next_run(task)
-        lines.append(f"{i}. {task['message']} ({when})")
+        badge = _format_recurrence(task)
+        lines.append(f"*{i}.* {task['message']}\n    {badge}  •  🕐 {when}")
 
     await update.message.reply_text(
         "📌 *Seus lembretes ativos:*\n\n"
-        + "\n".join(lines)
+        + "\n\n".join(lines)
         + "\n\n"
         + "Digite *apagar N* ou *mudar N*.\n"
         + "Exemplos: `apagar 1` ou `mudar 2`.",
