@@ -565,7 +565,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if awaiting == "ru_cpf":
             raw = text.strip()
             # aceita "CPF:12345678901" ou "CPF: 12345678901"
-            if raw.upper().startswith("CPF"):
+            if ":" in raw and raw.upper().startswith("CPF"):
                 cpf = raw.split(":", 1)[1].strip().replace(".", "").replace("-", "")
             else:
                 cpf = raw.replace(".", "").replace("-", "")
@@ -594,7 +594,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from ru.credentials import encrypt
 
             raw = text.strip()
-            if raw.upper().startswith("SENHA"):
+            if ":" in raw and raw.upper().startswith("SENHA"):
                 senha = raw.split(":", 1)[1].strip()
             else:
                 senha = raw
