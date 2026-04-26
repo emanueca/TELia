@@ -1,12 +1,13 @@
 import asyncio
 import logging
+import re
 from pathlib import Path
 from playwright.async_api import async_playwright, Page
 
 logger = logging.getLogger(__name__)
 
-_RU_BASE = "https://ru.fw.iffarroupilha.edu.br"
-_APP_URL  = _RU_BASE + "/sifw/"
+_RU_BASE   = "https://ru.fw.iffarroupilha.edu.br"
+_APP_URL   = _RU_BASE + "/sifw/"
 _AGENDA_URL = _RU_BASE + "/sifw/app/agendamento.xhtml"
 
 _LAUNCH_ARGS = [
@@ -21,10 +22,10 @@ _LAUNCH_ARGS = [
 _DEBUG_DIR = Path("/tmp/ru_debug")
 
 
-def _save_debug(page_html: str, name: str) -> None:
+def _dbg(html: str, name: str) -> None:
     try:
         _DEBUG_DIR.mkdir(parents=True, exist_ok=True)
-        (_DEBUG_DIR / f"{name}.html").write_text(page_html, encoding="utf-8")
+        (_DEBUG_DIR / f"{name}.html").write_text(html, encoding="utf-8")
     except Exception:
         pass
 
@@ -36,158 +37,146 @@ async def _launch_browser():
 
 
 async def _do_login(page: Page, cpf: str, senha: str) -> tuple[bool, str]:
-    """
-    Navigate to the app; Keycloak intercepts and shows its login form.
-    Returns (success, error_message).
-    """
     try:
         await page.goto(_APP_URL, timeout=25000, wait_until="domcontentloaded")
     except Exception as e:
         return False, f"Não consegui acessar o portal: {e}"
 
-    # Wait for Keycloak login form (standard Keycloak IDs)
+    # Espera o formulário Keycloak
     try:
         await page.wait_for_selector("#username", timeout=15000)
     except Exception:
-        # Not on login page — already logged in or unexpected page
         if "/sifw/" in page.url and "openid-connect" not in page.url:
             return True, ""
-        _save_debug(await page.content(), "01_unexpected_before_login")
+        _dbg(await page.content(), "01_unexpected_before_login")
         return False, f"Página de login não encontrada. URL: {page.url}"
 
-    # Fill Keycloak form
     await page.fill("#username", cpf)
     await page.fill("#password", senha)
 
-    # Keycloak login button: id="kc-login" or name="login"
     btn = await page.query_selector("#kc-login") or await page.query_selector("[name='login']")
     if not btn:
-        _save_debug(await page.content(), "02_no_login_button")
-        return False, "Botão de login não encontrado na página do Keycloak."
+        return False, "Botão de login não encontrado."
 
     await btn.click()
 
-    # Wait for redirect back to the app or an error message
     try:
         await page.wait_for_url(f"{_RU_BASE}/sifw/**", timeout=20000)
         return True, ""
     except Exception:
         pass
 
-    # Check for Keycloak error (wrong credentials)
-    err_el = await page.query_selector("#input-error, .alert-error, [class*='error']")
-    if err_el:
-        err_text = (await err_el.text_content() or "").strip()
-        return False, f"Credenciais inválidas: {err_text}"
-
     if "openid-connect" in page.url:
-        _save_debug(await page.content(), "03_still_on_keycloak")
-        return False, "CPF ou senha incorretos."
+        err_el = await page.query_selector("#input-error, .alert-error, [class*='kc-feedback']")
+        err_text = ((await err_el.text_content()) if err_el else "").strip()
+        _dbg(await page.content(), "02_login_failed")
+        return False, f"CPF ou senha incorretos.{' ' + err_text if err_text else ''}"
 
     return True, ""
 
 
-async def _go_to_agendamento(page: Page) -> bool:
-    """Navigate to the scheduling page. Returns True if reached."""
-    # If already there
-    if "agendamento" in page.url:
-        return True
+async def _load_agendamento(page: Page) -> bool:
+    """
+    Navega para agendamento.xhtml e espera o calendário PrimeFaces renderizar.
+    Retorna True quando os eventos do calendário estiverem visíveis.
+    """
+    if "agendamento" not in page.url:
+        try:
+            await page.goto(_AGENDA_URL, timeout=25000, wait_until="load")
+        except Exception as e:
+            logger.warning("goto agendamento falhou: %s", e)
+            # timeout no load é ok; o conteúdo já pode estar lá
+            pass
 
+    # Espera o calendário PrimeFaces renderizar (fc-view aparece após JS executar)
     try:
-        await page.goto(_AGENDA_URL, timeout=20000, wait_until="domcontentloaded")
-        # JSF pages may do a redirect; wait for network to settle
-        await page.wait_for_load_state("networkidle", timeout=10000)
+        await page.wait_for_selector(".fc-view, .fc-daygrid, .fc-event", timeout=20000)
         return True
-    except Exception as e:
-        logger.warning("Não consegui acessar %s: %s", _AGENDA_URL, e)
-        _save_debug(await page.content(), "04_agendamento_error")
+    except Exception:
+        _dbg(await page.content(), "03_calendar_not_rendered")
         return False
 
 
-async def _extract_days(page: Page) -> list[dict]:
+async def _extract_future_days(page: Page) -> list[dict]:
     """
-    Extract bookable days from agendamento.xhtml (JSF page).
-    Priority: checkboxes → table rows with date patterns → generic date elements.
+    Extrai eventos futuros do calendário FullCalendar/PrimeFaces.
+    Cada evento futuro = dia disponível para agendamento.
     """
+    _dbg(await page.content(), "04_calendar_loaded")
+
+    # Eventos futuros no calendário
+    events = await page.query_selector_all(".fc-event.fc-event-future, .fc-event-future")
     days: list[dict] = []
-    _save_debug(await page.content(), "05_agendamento_page")
 
-    # Strategy 1: checkboxes (JSF renders them as input[type=checkbox])
-    checkboxes = await page.query_selector_all("input[type='checkbox']")
-    for cb in checkboxes:
-        value = (await cb.get_attribute("value")) or ""
-        cb_id  = (await cb.get_attribute("id"))    or ""
-        cb_name = (await cb.get_attribute("name")) or ""
+    for ev in events:
+        try:
+            # Tenta pegar a data do ancestral [data-date]
+            date_val: str = await ev.evaluate(
+                "el => el.closest('[data-date]')?.getAttribute('data-date') || ''"
+            )
+            label: str = ((await ev.text_content()) or "").strip()
+            if not label:
+                label = date_val
 
-        label = ""
-        if cb_id:
-            lbl = await page.query_selector(f'label[for="{cb_id}"]')
-            if lbl:
-                label = ((await lbl.text_content()) or "").strip()
+            if date_val and date_val not in [d["value"] for d in days]:
+                # Formata label legível: "Seg 28/04"
+                try:
+                    from datetime import date as _date
+                    d = _date.fromisoformat(date_val)
+                    day_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+                    friendly = f"{day_names[d.weekday()]} {d.day:02d}/{d.month:02d}"
+                except Exception:
+                    friendly = label or date_val
 
-        if not label:
-            # Try the closest td/div/li
-            try:
-                parent_text = await cb.evaluate(
-                    "el => (el.closest('td,li,div,span') || el.parentElement)?.innerText"
-                )
-                label = (parent_text or "").strip()
-            except Exception:
-                pass
-
-        if not label:
-            label = value
-
-        if value:
-            days.append({
-                "label": label or value,
-                "value": value,
-                "selector": f'input[name="{cb_name}"][value="{value}"]' if cb_name else f'input[value="{value}"]',
-                "name": cb_name,
-                "type": "checkbox",
-            })
-
-    if days:
-        return days
-
-    # Strategy 2: table rows with date-like content (DD/MM or day names)
-    import re as _re
-    date_pattern = _re.compile(r"\d{1,2}[/\-]\d{1,2}|\b(seg|ter|qua|qui|sex|sáb|dom)\b", _re.I)
-    rows = await page.query_selector_all("table tr")
-    for row in rows:
-        cells = await row.query_selector_all("td")
-        if not cells:
+                days.append({
+                    "label": friendly,
+                    "value": date_val,
+                    "selector": f'[data-date="{date_val}"] .fc-event-future',
+                    "type": "calendar_event",
+                })
+        except Exception:
             continue
-        texts = [((await c.text_content()) or "").strip() for c in cells]
-        combined = " | ".join(t for t in texts if t)
-        if combined and date_pattern.search(combined):
-            days.append({
-                "label": combined,
-                "value": combined,
-                "selector": None,
-                "name": None,
-                "type": "row",
-            })
-
-    if days:
-        return days
-
-    # Strategy 3: any clickable element with a data-date attribute or date-like text
-    els = await page.query_selector_all("[data-date],[data-dia]")
-    for el in els:
-        text  = ((await el.text_content()) or "").strip()
-        value = (await el.get_attribute("data-date")) or (await el.get_attribute("data-dia")) or text
-        if value:
-            days.append({
-                "label": text or value,
-                "value": value,
-                "selector": None,
-                "name": None,
-                "type": "data-attr",
-            })
 
     return days
 
+
+async def _book_single_day(page: Page, date_value: str) -> bool:
+    """
+    Clica no evento do dia no calendário e confirma o agendamento.
+    Retorna True se confirmação foi possível.
+    """
+    # Clica no evento do dia
+    selector = f'[data-date="{date_value}"] .fc-event'
+    try:
+        await page.click(selector, timeout=5000)
+    except Exception:
+        # Tenta clicar na célula do dia diretamente
+        try:
+            await page.click(f'[data-date="{date_value}"]', timeout=5000)
+        except Exception as e:
+            logger.warning("Não consegui clicar no dia %s: %s", date_value, e)
+            return False
+
+    # Aguarda botão de confirmação "Sim" aparecer
+    try:
+        await page.wait_for_selector(
+            "button[id*='j_idt']:has-text('Sim'), button:has-text('Sim'), button:has-text('Confirmar')",
+            timeout=8000,
+        )
+        btn_sim = await page.query_selector(
+            "button[id*='j_idt']:has-text('Sim'), button:has-text('Sim'), button:has-text('Confirmar')"
+        )
+        if btn_sim:
+            await btn_sim.click()
+            await page.wait_for_timeout(2000)
+            return True
+    except Exception as e:
+        logger.warning("Botão 'Sim' não apareceu para dia %s: %s", date_value, e)
+
+    return False
+
+
+# ── API pública ─────────────────────────────────────────────────────────────
 
 async def login_and_get_days(cpf: str, senha: str) -> dict:
     pw, browser = await _launch_browser()
@@ -201,16 +190,16 @@ async def login_and_get_days(cpf: str, senha: str) -> dict:
         if not ok:
             return {"success": False, "error": err, "available_days": [], "raw_days": []}
 
-        reached = await _go_to_agendamento(page)
-        if not reached:
+        rendered = await _load_agendamento(page)
+        if not rendered:
             return {
                 "success": False,
-                "error": "Não consegui acessar a página de agendamento.",
+                "error": "Calendário de agendamento não carregou. Tente novamente.",
                 "available_days": [],
                 "raw_days": [],
             }
 
-        days = await _extract_days(page)
+        days = await _extract_future_days(page)
         return {
             "success": True,
             "error": None,
@@ -238,33 +227,26 @@ async def book_days(cpf: str, senha: str, selected_values: list[str]) -> dict:
         if not ok:
             return {"success": False, "error": err, "booked": [], "failed": selected_values}
 
-        await _go_to_agendamento(page)
+        rendered = await _load_agendamento(page)
+        if not rendered:
+            return {
+                "success": False,
+                "error": "Calendário não carregou.",
+                "booked": [],
+                "failed": selected_values,
+            }
 
         booked, failed = [], []
-        for value in selected_values:
-            try:
-                # Try by value first, then by name+value
-                cb = await page.query_selector(f'input[value="{value}"]')
-                if cb and not await cb.is_checked():
-                    await cb.check()
-                    booked.append(value)
-                elif cb:
-                    booked.append(value)
-                else:
-                    failed.append(value)
-            except Exception as e:
-                logger.warning("Erro ao selecionar dia %s: %s", value, e)
-                failed.append(value)
+        for date_val in selected_values:
+            success = await _book_single_day(page, date_val)
+            if success:
+                booked.append(date_val)
+            else:
+                failed.append(date_val)
+            # Pequena pausa entre reservas para o servidor processar
+            await page.wait_for_timeout(1500)
 
-        # Submit form
-        submit = await page.query_selector(
-            "button[type='submit'], input[type='submit'], button[id*='salvar'], button[id*='agendar']"
-        )
-        if submit and booked:
-            await submit.click()
-            await page.wait_for_load_state("networkidle", timeout=10000)
-            _save_debug(await page.content(), "06_after_submit")
-
+        _dbg(await page.content(), "05_after_booking")
         return {"success": True, "error": None, "booked": booked, "failed": failed}
     except Exception as e:
         logger.exception("Erro em book_days.")
