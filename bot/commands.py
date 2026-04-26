@@ -75,26 +75,6 @@ def _format_task_next_run(task: dict) -> str:
         return str(next_run)
 
 
-_DAY_LABELS = {
-    "MON": "Seg", "TUE": "Ter", "WED": "Qua",
-    "THU": "Qui", "FRI": "Sex", "SAT": "Sáb", "SUN": "Dom",
-}
-
-
-def _format_recurrence(task: dict) -> str:
-    """Returns a human-readable recurrence badge for a reminder task."""
-    if task.get("kind") == "LU":
-        return "🔔 Único"
-    schedule = str(task.get("schedule_code") or "")
-    if "|DAILY" in schedule:
-        return "🔁 Diário"
-    if "|WEEKLY:" in schedule:
-        days_part = schedule.split("|WEEKLY:", 1)[1].rstrip("]")
-        labels = [_DAY_LABELS.get(d.strip(), d.strip()) for d in days_part.split(",")]
-        return f"🔁 {', '.join(labels)}"
-    return "🔁 Recorrente"
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting", None)
     await update.message.reply_text(
@@ -326,12 +306,11 @@ async def lembretes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lines = []
     for i, task in enumerate(tasks, start=1):
         when = _format_task_next_run(task)
-        badge = _format_recurrence(task)
-        lines.append(f"*{i}.* {task['message']}\n    {badge}  •  🕐 {when}")
+        lines.append(f"{i}. {task['message']} ({when})")
 
     await update.message.reply_text(
         "📌 *Seus lembretes ativos:*\n\n"
-        + "\n\n".join(lines)
+        + "\n".join(lines)
         + "\n\n"
         + "Digite *apagar N* ou *mudar N*.\n"
         + "Exemplos: `apagar 1` ou `mudar 2`.",
@@ -581,21 +560,42 @@ async def modo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        context.user_data["ru_available_days"] = raw_days
+        dias_txt_lines = []
+        available_to_book = []
+        for d in raw_days:
+            if d.get("is_booked"):
+                dias_txt_lines.append(f"✅ {d['label']} *(Já agendado)*")
+            else:
+                available_to_book.append(d)
+                idx = len(available_to_book)
+                dias_txt_lines.append(f"*{idx}.* {d['label']}")
+
+        context.user_data["ru_available_days"] = available_to_book
         context.user_data["ru_cpf_dec"] = cpf
         context.user_data["ru_senha_dec"] = senha
         context.user_data["awaiting"] = "ru_select_days"
 
-        dias_txt = "\n".join(f"{i + 1}. {d['label']}" for i, d in enumerate(raw_days))
-        await query.edit_message_text(
+        dias_txt = "\n".join(dias_txt_lines)
+        
+        msg = (
             "✅ *Entrei com sucesso no sistema do RU!*\n\n"
-            "Posso agendar em janelas de até 8 dias.\n"
-            f"Dias disponíveis:\n\n{dias_txt}\n\n"
-            "Quais dias você quer agendar?\n"
-            "Diga *todos*, ou cite os números: `1, 2, 3`\n"
-            "Ou envie /cancelar para sair.",
-            parse_mode="Markdown",
+            "⚠️ *Regras de Agendamento:*\n"
+            "• Você sempre tem um horizonte de *7 dias* para agendar.\n"
+            "• Para agendar o almoço do *dia seguinte*, o limite é até as *17:00*.\n"
+            "• Passou das 17:00, o sistema bloqueia o dia seguinte.\n\n"
+            f"*Horizonte de dias:*\n\n{dias_txt}\n\n"
         )
+        
+        if available_to_book:
+            msg += (
+                "Quais dias disponíveis você quer agendar?\n"
+                "Diga *todos*, ou cite os números: `1, 2, 3`\n"
+                "Ou envie /cancelar para sair."
+            )
+        else:
+            msg += "Todos os dias disponíveis já estão agendados! Envie /cancelar para sair."
+
+        await query.edit_message_text(msg, parse_mode="Markdown")
         return
 
     labels = {

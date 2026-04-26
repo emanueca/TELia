@@ -100,63 +100,66 @@ async def _load_agendamento(page: Page) -> bool:
 
 async def _extract_future_days(page: Page) -> list[dict]:
     """
-    Extrai eventos futuros do calendário FullCalendar/PrimeFaces.
-    Cada evento futuro = dia disponível para agendamento.
+    Extrai os dias futuros do calendário FullCalendar/PrimeFaces.
+    Identifica se já estão agendados pela presença do .fc-event.
     """
     _dbg(await page.content(), "04_calendar_loaded")
 
-    # Eventos futuros no calendário
-    events = await page.query_selector_all(".fc-event.fc-event-future, .fc-event-future")
+    # Pega todas as células do calendário que têm data (evitando as passadas)
+    cells = await page.query_selector_all(".fc-day-future, td[data-date]")
     days: list[dict] = []
+    seen_dates = set()
 
-    for ev in events:
+    for cell in cells:
         try:
-            # Tenta pegar a data do ancestral [data-date]
-            date_val: str = await ev.evaluate(
-                "el => el.closest('[data-date]')?.getAttribute('data-date') || ''"
-            )
-            label: str = ((await ev.text_content()) or "").strip()
-            if not label:
-                label = date_val
+            date_val: str = await cell.get_attribute("data-date")
+            if not date_val or date_val in seen_dates:
+                continue
+            
+            class_attr = await cell.get_attribute("class") or ""
+            if "fc-day-past" in class_attr:
+                continue
+                
+            seen_dates.add(date_val)
 
-            if date_val and date_val not in [d["value"] for d in days]:
-                # Formata label legível: "Seg 28/04"
-                try:
-                    from datetime import date as _date
-                    d = _date.fromisoformat(date_val)
-                    day_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
-                    friendly = f"{day_names[d.weekday()]} {d.day:02d}/{d.month:02d}"
-                except Exception:
-                    friendly = label or date_val
+            # Se a célula tem um evento dentro, o almoço já está agendado
+            event = await cell.query_selector(".fc-event")
+            is_booked = bool(event)
 
-                days.append({
-                    "label": friendly,
-                    "value": date_val,
-                    "selector": f'[data-date="{date_val}"] .fc-event-future',
-                    "type": "calendar_event",
-                })
+            # Formata label legível: "Seg 28/04"
+            try:
+                from datetime import date as _date
+                d = _date.fromisoformat(date_val)
+                day_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+                friendly = f"{day_names[d.weekday()]} {d.day:02d}/{d.month:02d}"
+            except Exception:
+                friendly = date_val
+
+            days.append({
+                "label": friendly,
+                "value": date_val,
+                "is_booked": is_booked,
+                "type": "calendar_cell",
+            })
         except Exception:
             continue
 
-    return days
+    # Ordena por data e pega um horizonte de até 8 dias disponíveis
+    days = sorted(days, key=lambda x: x["value"])
+    return days[:8]
 
 
 async def _book_single_day(page: Page, date_value: str) -> bool:
     """
-    Clica no evento do dia no calendário e confirma o agendamento.
+    Clica no dia no calendário e confirma o agendamento.
     Retorna True se confirmação foi possível.
     """
-    # Clica no evento do dia
-    selector = f'[data-date="{date_value}"] .fc-event'
+    # Como o dia disponível é uma célula vazia, clicamos direto no data-date
     try:
-        await page.click(selector, timeout=5000)
-    except Exception:
-        # Tenta clicar na célula do dia diretamente
-        try:
-            await page.click(f'[data-date="{date_value}"]', timeout=5000)
-        except Exception as e:
-            logger.warning("Não consegui clicar no dia %s: %s", date_value, e)
-            return False
+        await page.click(f'[data-date="{date_value}"]', timeout=5000)
+    except Exception as e:
+        logger.warning("Não consegui clicar no dia %s: %s", date_value, e)
+        return False
 
     # Aguarda botão de confirmação "Sim" aparecer
     try:

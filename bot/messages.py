@@ -675,20 +675,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     context.user_data.pop("awaiting", None)
                     return
 
-                context.user_data["ru_available_days"] = raw_days
+                dias_txt_lines = []
+                available_to_book = []
+                for d in raw_days:
+                    if d.get("is_booked"):
+                        dias_txt_lines.append(f"✅ {d['label']} *(Já agendado)*")
+                    else:
+                        available_to_book.append(d)
+                        idx = len(available_to_book)
+                        dias_txt_lines.append(f"*{idx}.* {d['label']}")
+
+                context.user_data["ru_available_days"] = available_to_book
                 context.user_data["ru_cpf_dec"] = cpf
                 context.user_data["ru_senha_dec"] = senha
                 context.user_data["awaiting"] = "ru_select_days"
-                dias_txt = "\n".join(f"{i + 1}. {d['label']}" for i, d in enumerate(raw_days))
-                await _safe_edit(
-                    aguarde,
-                    "✅ *Entrei com sucesso!*\n\n"
-                    f"Dias disponíveis para agendamento:\n\n{dias_txt}\n\n"
-                    "Quais dias você quer agendar?\n"
-                    "Diga *todos*, ou cite os números: `1, 2, 3`\n"
-                    "Ou envie /cancelar para sair.",
-                    parse_mode="Markdown",
+                
+                dias_txt = "\n".join(dias_txt_lines)
+
+                msg = (
+                    "✅ *Entrei com sucesso no sistema do RU!*\n\n"
+                    "⚠️ *Regras de Agendamento:*\n"
+                    "• Você sempre tem um horizonte de *7 dias* para agendar.\n"
+                    "• Para agendar o almoço do *dia seguinte*, o limite é até as *17:00*.\n"
+                    "• Passou das 17:00, o sistema bloqueia o dia seguinte.\n\n"
+                    f"*Horizonte de dias:*\n\n{dias_txt}\n\n"
                 )
+                
+                if available_to_book:
+                    msg += (
+                        "Quais dias disponíveis você quer agendar?\n"
+                        "Diga *todos*, ou cite os números: `1, 2, 3`\n"
+                        "Ou envie /cancelar para sair."
+                    )
+                else:
+                    msg += "Todos os dias disponíveis já estão agendados! Envie /cancelar para sair."
+
+                await _safe_edit(aguarde, msg, parse_mode="Markdown")
                 return
             else:
                 context.user_data.pop("awaiting", None)
@@ -1039,4 +1061,4 @@ async def _processar_login(update: Update, context, chat_id: int, text: str):
                 "Use /lembretes para ver todos os seus lembretes ativos."
             )
     except Exception:
-        logger.exception("Falha ao verificar lembretes em atraso no login.")
+        logger.exception("Falha ao verificar le
