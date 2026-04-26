@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS reports (
     INDEX idx_reports_user_id (user_id)
 );
 
+-- Credenciais do RU (CPF e senha criptografados por usuario)
+CREATE TABLE IF NOT EXISTS ru_credentials (
+    user_id BIGINT PRIMARY KEY,
+    cpf_enc TEXT NOT NULL,
+    senha_enc TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE
+);
+
 -- Limpeza opcional de tabelas antigas, se ainda existirem no banco:
 -- SET FOREIGN_KEY_CHECKS=0;
 -- DROP TABLE IF EXISTS reminders;

@@ -125,6 +125,16 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ru_credentials (
+            user_id    BIGINT PRIMARY KEY,
+            cpf_enc    TEXT NOT NULL,
+            senha_enc  TEXT NOT NULL,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE
+        )
+    """)
+
     conn.commit()
     cursor.close()
     conn.close()
