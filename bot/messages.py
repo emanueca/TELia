@@ -1061,4 +1061,4 @@ async def _processar_login(update: Update, context, chat_id: int, text: str):
                 "Use /lembretes para ver todos os seus lembretes ativos."
             )
     except Exception:
-        logger.exception("Falha ao verificar le
+        logger.exception("Falha ao verificar lembretes atrasados no login.")
