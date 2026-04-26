@@ -83,10 +83,12 @@ async def _load_agendamento(page: Page) -> bool:
     """
     if "agendamento" not in page.url:
         try:
+            # Passar explicitamente pelo index.xhtml primeiro inicializa os beans do JSF
+            await page.goto(f"{_RU_BASE}/sifw/app/index.xhtml", timeout=20000, wait_until="load")
+            await page.wait_for_timeout(1000)
             await page.goto(_AGENDA_URL, timeout=25000, wait_until="load")
         except Exception as e:
             logger.warning("goto agendamento falhou: %s", e)
-            # timeout no load é ok; o conteúdo já pode estar lá
             pass
 
     # Espera o calendário PrimeFaces renderizar (fc-view aparece após JS executar)
@@ -154,9 +156,15 @@ async def _book_single_day(page: Page, date_value: str) -> bool:
     Clica no dia no calendário e confirma o agendamento.
     Retorna True se confirmação foi possível.
     """
-    # Como o dia disponível é uma célula vazia, clicamos direto no data-date
     try:
-        await page.click(f'[data-date="{date_value}"]', timeout=5000)
+        # Oculta mensagens de notificação (Growl) do dia anterior que podem bloquear cliques
+        await page.evaluate("document.querySelectorAll('.ui-growl').forEach(e => e.style.display = 'none');")
+    except Exception:
+        pass
+
+    try:
+        # force=True garante o clique mesmo se houver overlays invisíveis pelo caminho
+        await page.click(f'[data-date="{date_value}"]', timeout=5000, force=True)
     except Exception as e:
         logger.warning("Não consegui clicar no dia %s: %s", date_value, e)
         return False
@@ -169,15 +177,20 @@ async def _book_single_day(page: Page, date_value: str) -> bool:
             await page.wait_for_timeout(500)
             await btn_salvar.click()
             
-            # Boa prática com PrimeFaces: esperar o overlay/spinner de loading sumir
-            # Após clicar em Salvar, o sistema faz a requisição AJAX e fecha a janela.
-            # Esperamos o overlay de bloqueio sumir para o bot não atropelar os próximos dias.
+            # 1. Espera a janela fechar (o botão Salvar deve sumir da tela)
+            try:
+                await page.wait_for_selector("button:has-text('Salvar')", state="hidden", timeout=8000)
+            except Exception:
+                pass
+
+            # 2. Espera o overlay de carregamento do PrimeFaces sumir
             try:
                 await page.wait_for_selector(".ui-widget-overlay", state="hidden", timeout=8000)
             except Exception:
                 pass
                 
-            await page.wait_for_timeout(1000)
+            # Dá um tempo extra pro JSF reconstruir o DOM do calendário no navegador
+            await page.wait_for_timeout(1500)
             return True
     except Exception as e:
         logger.warning("Botão 'Salvar' não apareceu para o dia %s: %s", date_value, e)
