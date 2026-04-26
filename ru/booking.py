@@ -171,19 +171,30 @@ async def _book_single_day(page: Page, date_value: str) -> bool:
 
     # Aguarda a janela modal "Detalhes" e o botão "Salvar" aparecerem
     try:
+        # 1. Garante que o tipo de refeição está selecionado (Almoço)
+        dropdown_label = await page.wait_for_selector("label[id$='tipoRefeicao_label']", state="visible", timeout=8000)
+        if dropdown_label:
+            text = await dropdown_label.text_content()
+            if not text or "Almoço" not in text:
+                # Clica para abrir a listagem e escolhe o almoço
+                await dropdown_label.click()
+                await page.wait_for_timeout(500)
+                await page.click("li.ui-selectonemenu-item:has-text('Almoço')", timeout=3000)
+                await page.wait_for_timeout(500)
+
+        # 2. Clica no botão Salvar
         btn_salvar = await page.wait_for_selector("button:has-text('Salvar')", state="visible", timeout=8000)
         if btn_salvar:
-            # Espera a animação de fade-in da janelinha modal do PrimeFaces terminar
             await page.wait_for_timeout(500)
             await btn_salvar.click()
             
-            # 1. Espera a janela fechar (o botão Salvar deve sumir da tela)
-            try:
-                await page.wait_for_selector("button:has-text('Salvar')", state="hidden", timeout=8000)
-            except Exception:
-                pass
+            # 3. O PrimeFaces abre um popup de confirmação ("Você tem certeza disso?")
+            # Precisamos clicar em "Sim" nesta segunda janelinha
+            btn_sim = await page.wait_for_selector("button:has-text('Sim'), button.ui-confirmdialog-yes", state="visible", timeout=5000)
+            if btn_sim:
+                await btn_sim.click()
 
-            # 2. Espera o overlay de carregamento do PrimeFaces sumir
+            # 4. Espera a requisição AJAX concluir e os overlays sumirem
             try:
                 await page.wait_for_selector(".ui-widget-overlay", state="hidden", timeout=8000)
             except Exception:
@@ -193,7 +204,7 @@ async def _book_single_day(page: Page, date_value: str) -> bool:
             await page.wait_for_timeout(1500)
             return True
     except Exception as e:
-        logger.warning("Botão 'Salvar' não apareceu para o dia %s: %s", date_value, e)
+        logger.warning("Falha no fluxo de Salvar/Confirmar para o dia %s: %s", date_value, e)
 
     return False
 
