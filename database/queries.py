@@ -599,3 +599,38 @@ def upsert_profile(user_id: int, key: str, value: str):
     cursor.close()
     conn.close()
 
+# ── Credenciais do RU ─────────────────────────────────────
+
+def save_ru_credentials(user_id: int, cpf_enc: str, senha_enc: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO ru_credentials (user_id, cpf_enc, senha_enc)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE cpf_enc = VALUES(cpf_enc), senha_enc = VALUES(senha_enc),
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (user_id, cpf_enc, senha_enc),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def get_ru_credentials(user_id: int) -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        "SELECT cpf_enc, senha_enc FROM ru_credentials WHERE user_id = %s",
+        (user_id,),
+    )
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return row
+
+
+def has_ru_credentials(user_id: int) -> bool:
+    return get_ru_credentials(user_id) is not None
+

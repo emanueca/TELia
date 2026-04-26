@@ -25,6 +25,9 @@ from bot.commands import (
     timezone_command,
     timezone_callback,
     timezone_location,
+    modo,
+    modo_callback,
+    cancelar,
 )
 from bot.messages import handle_message
 from scheduler.jobs import start_scheduler
@@ -49,6 +52,7 @@ async def _post_init(app):
             BotCommand("lembretes", "listar e gerenciar lembretes"),
             BotCommand("ia", "escolher modelo de IA"),
             BotCommand("timezone", "configurar fuso horário"),
+            BotCommand("modo", "escolher um modo de uso"),
             BotCommand("ajuda", "ver ajuda completa"),
             BotCommand("help", "atalho para ajuda"),
         ]
@@ -69,7 +73,10 @@ def main():
     app.add_handler(CommandHandler("ia", ia))
     app.add_handler(CommandHandler("lembretes", lembretes))
     app.add_handler(CommandHandler("timezone", timezone_command))
+    app.add_handler(CommandHandler("modo", modo))
+    app.add_handler(CommandHandler("cancelar", cancelar))
     app.add_handler(CallbackQueryHandler(timezone_callback, pattern=r"^timezone:"))
+    app.add_handler(CallbackQueryHandler(modo_callback, pattern=r"^modo:"))
     app.add_handler(MessageHandler(filters.LOCATION, timezone_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

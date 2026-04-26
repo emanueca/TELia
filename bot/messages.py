@@ -372,7 +372,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         usuario = None
         user_id = None
 
-        if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name"}:
+        if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name", "ru_cpf", "ru_senha", "ru_select_days", "ru_reservar_agora"}:
             usuario = get_usuario(chat_id)
             if not usuario or not usuario["logado"]:
                 context.user_data.pop("awaiting", None)
@@ -560,6 +560,207 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 f"✅ Modelo da sua conta atualizado para: {selected_model}."
             )
+            return
+
+        if awaiting == "ru_cpf":
+            raw = text.strip()
+            # aceita "CPF:12345678901" ou "CPF: 12345678901"
+            if raw.upper().startswith("CPF"):
+                cpf = raw.split(":", 1)[1].strip().replace(".", "").replace("-", "")
+            else:
+                cpf = raw.replace(".", "").replace("-", "")
+
+            if not cpf.isdigit() or len(cpf) != 11:
+                await update.message.reply_text(
+                    "❌ CPF inválido. Envie exatamente 11 dígitos, sem pontos ou traços.\n"
+                    "Exemplo: `CPF:12345678901`",
+                    parse_mode="Markdown",
+                )
+                return
+
+            context.user_data["ru_cpf_tmp"] = cpf
+            context.user_data["awaiting"] = "ru_senha"
+            await update.message.reply_text(
+                "✅ CPF recebido!\n\n"
+                "Agora envie sua senha do portal IFFar no formato:\n"
+                "`SENHA:suasenha`\n\n"
+                "Ou envie /cancelar para sair.",
+                parse_mode="Markdown",
+            )
+            return
+
+        if awaiting == "ru_senha":
+            from database.queries import save_ru_credentials
+            from ru.credentials import encrypt
+
+            raw = text.strip()
+            if raw.upper().startswith("SENHA"):
+                senha = raw.split(":", 1)[1].strip()
+            else:
+                senha = raw
+
+            if not senha:
+                await update.message.reply_text(
+                    "❌ Senha não pode ser vazia. Tente novamente:\n`SENHA:suasenha`",
+                    parse_mode="Markdown",
+                )
+                return
+
+            cpf = context.user_data.pop("ru_cpf_tmp", None)
+            if not cpf:
+                context.user_data.pop("awaiting", None)
+                await update.message.reply_text(
+                    "❌ Sessão expirou. Use /modo para começar novamente."
+                )
+                return
+
+            try:
+                cpf_enc = encrypt(cpf)
+                senha_enc = encrypt(senha)
+                save_ru_credentials(user_id, cpf_enc, senha_enc)
+            except Exception:
+                logger.exception("Falha ao salvar credenciais do RU.")
+                await update.message.reply_text(
+                    "⚠️ Não consegui salvar suas credenciais. Tente novamente."
+                )
+                return
+
+            context.user_data.pop("awaiting", None)
+            context.user_data.pop("ru_user_id", None)
+            context.user_data["ru_cpf_dec"] = cpf
+            context.user_data["ru_senha_dec"] = senha
+            await update.message.reply_text(
+                "✅ *Credenciais do RU salvas com segurança!*\n\n"
+                "Seu CPF e senha estão criptografados e vinculados apenas à sua conta.\n\n"
+                "Quer reservar o almoço agora? Responda *sim* para entrar no sistema e ver os dias disponíveis, "
+                "ou *não* para sair.",
+                parse_mode="Markdown",
+            )
+            context.user_data["awaiting"] = "ru_reservar_agora"
+            return
+
+        if awaiting == "ru_reservar_agora":
+            resp = text.strip().lower()
+            if resp in {"sim", "s", "yes", "y"}:
+                from ru.booking import login_and_get_days
+                cpf = context.user_data.pop("ru_cpf_dec", None)
+                senha = context.user_data.pop("ru_senha_dec", None)
+                if not cpf or not senha:
+                    context.user_data.pop("awaiting", None)
+                    await update.message.reply_text("❌ Sessão expirou. Use /modo para começar novamente.")
+                    return
+                aguarde = await update.message.reply_text("⏳ Entrando no sistema do RU, aguarde...")
+                try:
+                    result = await login_and_get_days(cpf, senha)
+                except Exception:
+                    logger.exception("Falha ao acessar o RU.")
+                    await _safe_edit(aguarde, "⚠️ Erro ao acessar o sistema do RU. Tente novamente mais tarde.")
+                    context.user_data.pop("awaiting", None)
+                    return
+
+                if not result["success"]:
+                    await _safe_edit(
+                        aguarde,
+                        f"❌ Não consegui entrar no sistema do RU.\n\nMotivo: {result['error']}"
+                    )
+                    context.user_data.pop("awaiting", None)
+                    return
+
+                raw_days = result["raw_days"]
+                if not raw_days:
+                    await _safe_edit(
+                        aguarde,
+                        "✅ Entrei com sucesso!\n\nNão há dias disponíveis para agendamento no momento."
+                    )
+                    context.user_data.pop("awaiting", None)
+                    return
+
+                context.user_data["ru_available_days"] = raw_days
+                context.user_data["ru_cpf_dec"] = cpf
+                context.user_data["ru_senha_dec"] = senha
+                context.user_data["awaiting"] = "ru_select_days"
+                dias_txt = "\n".join(f"{i + 1}. {d['label']}" for i, d in enumerate(raw_days))
+                await _safe_edit(
+                    aguarde,
+                    "✅ *Entrei com sucesso!*\n\n"
+                    f"Dias disponíveis para agendamento:\n\n{dias_txt}\n\n"
+                    "Quais dias você quer agendar?\n"
+                    "Diga *todos*, ou cite os números: `1, 2, 3`\n"
+                    "Ou envie /cancelar para sair.",
+                    parse_mode="Markdown",
+                )
+                return
+            else:
+                context.user_data.pop("awaiting", None)
+                context.user_data.pop("ru_cpf_dec", None)
+                context.user_data.pop("ru_senha_dec", None)
+                await update.message.reply_text(
+                    "Tudo bem! Quando quiser reservar, use /modo → Reservar Almoço."
+                )
+                return
+
+        if awaiting == "ru_select_days":
+            from ru.booking import book_days as ru_book_days
+            raw_days = context.user_data.get("ru_available_days") or []
+            cpf = context.user_data.get("ru_cpf_dec")
+            senha = context.user_data.get("ru_senha_dec")
+
+            if not raw_days or not cpf or not senha:
+                context.user_data.pop("awaiting", None)
+                await update.message.reply_text("❌ Sessão expirou. Use /modo → Reservar Almoço novamente.")
+                return
+
+            # Parse selection
+            raw_txt = text.strip().lower()
+            if raw_txt in {"todos", "all", "tudo"}:
+                chosen = list(range(len(raw_days)))
+            else:
+                chosen = []
+                for token in re.split(r"[,\s]+", raw_txt):
+                    token = token.strip()
+                    if token.isdigit():
+                        idx = int(token) - 1
+                        if 0 <= idx < len(raw_days):
+                            chosen.append(idx)
+
+            if not chosen:
+                await update.message.reply_text(
+                    "❌ Não entendi sua seleção.\n"
+                    "Diga *todos* ou cite os números dos dias: `1, 2, 3`",
+                    parse_mode="Markdown",
+                )
+                return
+
+            selected_values = [raw_days[i]["value"] for i in chosen]
+            selected_labels = [raw_days[i]["label"] for i in chosen]
+
+            aguarde = await update.message.reply_text(
+                f"⏳ Agendando {len(selected_values)} dia(s)..."
+            )
+            try:
+                result = await ru_book_days(cpf, senha, selected_values)
+            except Exception:
+                logger.exception("Falha ao reservar dias no RU.")
+                await _safe_edit(aguarde, "⚠️ Erro ao reservar. Tente novamente.")
+                return
+            finally:
+                context.user_data.pop("awaiting", None)
+                context.user_data.pop("ru_available_days", None)
+                context.user_data.pop("ru_cpf_dec", None)
+                context.user_data.pop("ru_senha_dec", None)
+
+            if not result["success"]:
+                await _safe_edit(aguarde, f"❌ Erro ao reservar: {result.get('error', 'desconhecido')}")
+                return
+
+            booked_labels = selected_labels[: len(result["booked"])]
+            failed_count = len(result.get("failed") or [])
+            txt = "✅ *Agendamento concluído!*\n\n"
+            if booked_labels:
+                txt += "Dias reservados:\n" + "\n".join(f"• {l}" for l in booked_labels)
+            if failed_count:
+                txt += f"\n\n⚠️ {failed_count} dia(s) não puderam ser agendados (talvez já reservados ou indisponíveis)."
+            await _safe_edit(aguarde, txt, parse_mode="Markdown")
             return
 
         # ── Fluxo de formulário (login ou cadastro) ───────────

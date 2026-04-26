@@ -438,6 +438,164 @@ async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def modo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("🍽️ Reservar Almoço, IFFar-FW", callback_data="modo:reservar_almoco")],
+        [InlineKeyboardButton("📊 Cálculo de Notas", callback_data="modo:calc_notas")],
+        [InlineKeyboardButton("🤖 Testar IA", callback_data="modo:testar_ia")],
+        [InlineKeyboardButton('📝 "Bloco de Notas"', callback_data="modo:bloco_notas")],
+    ]
+    await update.message.reply_text(
+        "Escolha um desses modos abaixo:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+async def modo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from database.queries import get_usuario, has_ru_credentials, get_ru_credentials
+    from ru.credentials import decrypt
+    from ru.booking import login_and_get_days
+
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+
+    if data == "modo:reservar_almoco":
+        chat_id = update.effective_chat.id
+        usuario = get_usuario(chat_id)
+        if not usuario or not usuario["logado"]:
+            await query.edit_message_text(
+                "👋 Para usar este modo, você precisa estar logado.\n"
+                "Use /login ou /cadastrar."
+            )
+            return
+
+        user_id = usuario["chat_id"]
+        ja_tem = has_ru_credentials(user_id)
+        context.user_data["ru_user_id"] = user_id
+
+        if ja_tem:
+            keyboard = [
+                [InlineKeyboardButton("🍽️ Reservar agora", callback_data="modo:iniciar_reserva")],
+                [InlineKeyboardButton("🔑 Atualizar credenciais", callback_data="modo:atualizar_creds")],
+            ]
+            await query.edit_message_text(
+                "🍽️ *Reserva Automática de Almoço — IFFar-FW*\n\n"
+                "✅ Você já tem credenciais configuradas.\n\n"
+                "O que deseja fazer?",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+            )
+        else:
+            context.user_data["awaiting"] = "ru_cpf"
+            await query.edit_message_text(
+                "🍽️ *Reserva Automática de Almoço — IFFar-FW*\n\n"
+                "Para configurar, preciso das suas credenciais do portal IFFar.\n\n"
+                "Envie seu CPF no formato:\n"
+                "`CPF:XXXXXXXXXXX`\n"
+                "_(11 dígitos, sem pontos ou traços)_\n\n"
+                "Ou envie /cancelar para sair.",
+                parse_mode="Markdown",
+            )
+        return
+
+    if data == "modo:atualizar_creds":
+        chat_id = update.effective_chat.id
+        usuario = get_usuario(chat_id)
+        if not usuario or not usuario["logado"]:
+            await query.edit_message_text("👋 Faça login com /login.")
+            return
+        context.user_data["awaiting"] = "ru_cpf"
+        context.user_data["ru_user_id"] = usuario["chat_id"]
+        await query.edit_message_text(
+            "🔑 *Atualizar credenciais do RU*\n\n"
+            "Envie seu novo CPF no formato:\n"
+            "`CPF:XXXXXXXXXXX`\n"
+            "_(11 dígitos, sem pontos ou traços)_\n\n"
+            "Ou envie /cancelar para sair.",
+            parse_mode="Markdown",
+        )
+        return
+
+    if data == "modo:iniciar_reserva":
+        chat_id = update.effective_chat.id
+        usuario = get_usuario(chat_id)
+        if not usuario or not usuario["logado"]:
+            await query.edit_message_text("👋 Faça login com /login.")
+            return
+
+        user_id = usuario["chat_id"]
+        creds = get_ru_credentials(user_id)
+        if not creds:
+            await query.edit_message_text(
+                "❌ Não encontrei suas credenciais. Use /modo → Reservar Almoço para configurar."
+            )
+            return
+
+        await query.edit_message_text("⏳ Entrando no sistema do RU, aguarde...")
+        try:
+            cpf = decrypt(creds["cpf_enc"])
+            senha = decrypt(creds["senha_enc"])
+            result = await login_and_get_days(cpf, senha)
+        except Exception:
+            await query.edit_message_text(
+                "⚠️ Erro ao acessar o sistema do RU. Tente novamente mais tarde."
+            )
+            return
+
+        if not result["success"]:
+            await query.edit_message_text(
+                f"❌ Não consegui entrar no sistema do RU.\n\n"
+                f"Motivo: {result['error']}\n\n"
+                "Verifique suas credenciais com /modo → Reservar Almoço → Atualizar credenciais."
+            )
+            return
+
+        raw_days = result["raw_days"]
+        if not raw_days:
+            await query.edit_message_text(
+                "✅ Entrei com sucesso no sistema!\n\n"
+                "Mas não encontrei dias disponíveis para agendamento no momento.\n"
+                "Tente novamente mais tarde."
+            )
+            return
+
+        context.user_data["ru_available_days"] = raw_days
+        context.user_data["ru_cpf_dec"] = cpf
+        context.user_data["ru_senha_dec"] = senha
+        context.user_data["awaiting"] = "ru_select_days"
+
+        dias_txt = "\n".join(f"{i + 1}. {d['label']}" for i, d in enumerate(raw_days))
+        await query.edit_message_text(
+            "✅ *Entrei com sucesso no sistema do RU!*\n\n"
+            "Posso agendar em janelas de até 8 dias.\n"
+            f"Dias disponíveis:\n\n{dias_txt}\n\n"
+            "Quais dias você quer agendar?\n"
+            "Diga *todos*, ou cite os números: `1, 2, 3`\n"
+            "Ou envie /cancelar para sair.",
+            parse_mode="Markdown",
+        )
+        return
+
+    labels = {
+        "modo:calc_notas": "📊 Cálculo de Notas",
+        "modo:testar_ia": "🤖 Testar IA",
+        "modo:bloco_notas": '📝 "Bloco de Notas"',
+    }
+    label = labels.get(data, "Este modo")
+    await query.edit_message_text(f"{label}\n\n⚙️ Ainda em Desenvolvimento.")
+
+
+async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("awaiting", None)
+    context.user_data.pop("ru_cpf_tmp", None)
+    context.user_data.pop("ru_user_id", None)
+    context.user_data.pop("ru_cpf_dec", None)
+    context.user_data.pop("ru_senha_dec", None)
+    context.user_data.pop("ru_available_days", None)
+    await update.message.reply_text("Operação cancelada. Use /modo para começar novamente.")
+
+
 async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from database.queries import get_usuario, set_logado, clear_chat_session
 
