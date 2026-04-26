@@ -161,28 +161,26 @@ async def _book_single_day(page: Page, date_value: str) -> bool:
         logger.warning("Não consegui clicar no dia %s: %s", date_value, e)
         return False
 
-    # Aguarda botão de confirmação "Sim" aparecer
+    # Aguarda a janela modal "Detalhes" e o botão "Salvar" aparecerem
     try:
-        await page.wait_for_selector(
-            "button[id*='j_idt']:has-text('Sim'), button:has-text('Sim'), button:has-text('Confirmar')",
-            timeout=8000,
-        )
-        btn_sim = await page.query_selector(
-            "button[id*='j_idt']:has-text('Sim'), button:has-text('Sim'), button:has-text('Confirmar')"
-        )
-        if btn_sim:
-            await btn_sim.click()
+        btn_salvar = await page.wait_for_selector("button:has-text('Salvar')", state="visible", timeout=8000)
+        if btn_salvar:
+            # Espera a animação de fade-in da janelinha modal do PrimeFaces terminar
+            await page.wait_for_timeout(500)
+            await btn_salvar.click()
             
             # Boa prática com PrimeFaces: esperar o overlay/spinner de loading sumir
+            # Após clicar em Salvar, o sistema faz a requisição AJAX e fecha a janela.
+            # Esperamos o overlay de bloqueio sumir para o bot não atropelar os próximos dias.
             try:
-                await page.wait_for_selector(".ui-widget-overlay", state="hidden", timeout=5000)
+                await page.wait_for_selector(".ui-widget-overlay", state="hidden", timeout=8000)
             except Exception:
                 pass
                 
             await page.wait_for_timeout(1000)
             return True
     except Exception as e:
-        logger.warning("Botão 'Sim' não apareceu para dia %s: %s", date_value, e)
+        logger.warning("Botão 'Salvar' não apareceu para o dia %s: %s", date_value, e)
 
     return False
 
