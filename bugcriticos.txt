@@ -41,3 +41,22 @@
 - Banco e aplicação não precisam usar o mesmo fuso visual, mas o banco deve ficar consistente internamente.
 - Para evitar confusão, salvar no banco em UTC e exibir em fuso local na aplicação é a abordagem mais segura.
 - Se a IA já calcula o horário pelo perfil do usuário, mexer no timezone do banco não deve quebrar a lógica dela.
+
+## Bug crítico: Falso positivo na reserva do RU (PrimeFaces falhando silenciosamente)
+
+### Sintoma
+- O bot relatava "Agendamento concluído" com sucesso, mas os dias não ficavam salvos no sistema do IFFar.
+
+### Causa raiz
+- O sistema utiliza JSF/PrimeFaces e possuía duas armadilhas ocultas na janela modal de "Detalhes":
+  1. O Dropdown "Tipo de refeição" vinha com uma opção vazia selecionada por padrão (`&nbsp;`), invalidando o envio silenciosamente.
+  2. O botão "Salvar" não enviava o formulário; ele acionava um `PrimeFaces.confirm` que abria um segundo popup invisível perguntando "Você tem certeza disso?", exigindo um clique no botão "Sim". Como o bot não clicava em "Sim", a reserva era descartada.
+
+### Correção aplicada
+- Forçar a abertura do dropdown e a seleção explícita da opção "Almoço".
+- Após clicar em "Salvar", o bot agora aguarda o modal de confirmação e clica explicitamente no botão "Sim" (`button.ui-confirmdialog-yes`).
+- Adicionado wait para o overlay (`.ui-widget-overlay`) sumir, garantindo que o servidor processou a requisição AJAX antes de ir para o próximo dia.
+
+### Lições
+- Em automações de sistemas JSF/PrimeFaces, nunca confie apenas em clicar no "Salvar". Deve-se inspecionar o fluxo de rede ou o DOM em busca de popups de confirmação ocultos.
+- Sempre garanta que campos obrigatórios (dropdowns) sejam preenchidos explicitamente pelo bot, mesmo que pareçam ser a única opção disponível.
