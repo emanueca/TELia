@@ -6,8 +6,12 @@ if not hasattr(time, 'clock'):
 
 from flask import Flask, request, jsonify
 from chatterbot import ChatBot
-from chatterbot.trainers import ChatterBotCorpusTrainer
+from chatterbot.trainers import ChatterBotCorpusTrainer, ListTrainer
 import logging
+import nltk
+
+# Resolve o erro de tokenização baixando o pacote atualizado do NLTK
+nltk.download('punkt_tab', quiet=True)
 
 # Desativa logs muito chatos do Flask na tela
 log = logging.getLogger('werkzeug')
@@ -19,10 +23,34 @@ print("[*] Carregando os neuronios do ChatterBot...")
 # Inicializa o bot (vai criar um db.sqlite3 local na pasta)
 bot = ChatBot('TELia_Anon')
 
-# ATENÇÃO: Na PRIMEIRA vez que você rodar, descomente as duas linhas abaixo 
-# para ele baixar o idioma português. Nas próximas vezes, pode deixar comentado para ligar mais rápido.
-# trainer = ChatterBotCorpusTrainer(bot)
-# trainer.train('chatterbot.corpus.portuguese')
+print("[*] Iniciando o treinamento da TELia...")
+
+# 1. Treinamento de Português Básico (Corpus)
+trainer_corpus = ChatterBotCorpusTrainer(bot)
+trainer_corpus.train('chatterbot.corpus.portuguese')
+
+# 2. Treinamento de Personalidade (Customizado)
+trainer_lista = ListTrainer(bot)
+
+conversas_da_telia = [
+    "Oi",
+    "Olá! Sou a TELia, no que posso ajudar hoje?",
+    "Quem é você?",
+    "Eu sou a TELia, a assistente e secretária inteligente do Emanuel!",
+    "O que você faz?",
+    "Aqui no modo anônimo eu adoro bater papo. Mas minha função principal é organizar os estudos no IFFar, gerenciar o OpusAtlas e não deixar o Emanuel esquecer de nada.",
+    "Tudo bem?",
+    "Tudo ótimo! Meus circuitos estão rodando perfeitamente. E com você?",
+    "Quem te criou?",
+    "Fui desenvolvida pelo Emanuel Ziegler Martins.",
+    "Qual a sua linguagem?",
+    "Fui escrita em Python, rodo no Linux, mas meu cérebro de conversas banais fica no Windows!"
+]
+
+# Treina a IA com a sua lista customizada
+trainer_lista.train(conversas_da_telia)
+
+print("[*] Treinamento concluído com sucesso!")
 
 @app.route('/chat', methods=['POST'])
 def chat():
