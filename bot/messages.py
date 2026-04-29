@@ -372,6 +372,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         usuario = None
         user_id = None
 
+        # Fluxo modo desenvolvedor: aceita respostas do usuário e envia próximo prompt
+        if awaiting == "dev_reply":
+            import random
+
+            prompts = context.user_data.get("dev_prompts") or []
+            if not prompts:
+                context.user_data.pop("awaiting", None)
+                await update.message.reply_text("Modo desenvolvedor encerrado. Use /desenvolvedor para recomeçar.")
+                return
+
+            candidates = prompts[1:] if len(prompts) > 1 else prompts
+            next_prompt = random.choice(candidates) if candidates else prompts[0]
+            await update.message.reply_text(
+                "Boa! Agora tenta essa aqui:")
+            await update.message.reply_text(next_prompt)
+            return
+
+        # Modo anônimo: encaminha a mensagem para a IA externa sem tocar no banco
+        if context.user_data.get("status") == "anonimo":
+            from brain.chatterbot.api_ia import send_anonymous_to_brain
+            from bot.commands import start_developer_mode
+
+            aguarde = await update.message.reply_text("✍️ Enviando ao modo anônimo...")
+            _remember_chat_message(context, aguarde.message_id)
+            try:
+                reply = await asyncio.wait_for(send_anonymous_to_brain(text), timeout=30)
+            except asyncio.TimeoutError:
+                await start_developer_mode(
+                    update,
+                    context,
+                    auto_message=(
+                        "Parece que o ChatBot está desativado, mas treine a IA para quando ele estiver disponível usando /desenvolvedor ou /sair para uma conversa normal."
+                    ),
+                )
+                return
+            except Exception:
+                await start_developer_mode(
+                    update,
+                    context,
+                    auto_message=(
+                        "Parece que o ChatBot está desativado, mas treine a IA para quando ele estiver disponível usando /desenvolvedor ou /sair para uma conversa normal."
+                    ),
+                )
+                return
+
+            if not reply:
+                await start_developer_mode(
+                    update,
+                    context,
+                    auto_message=(
+                        "Parece que o ChatBot está desativado, mas treine a IA para quando ele estiver disponível usando /desenvolvedor ou /sair para uma conversa normal."
+                    ),
+                )
+            else:
+                await update.message.reply_text(reply)
+            return
+
         if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name", "ru_cpf", "ru_senha", "ru_select_days", "ru_reservar_agora"}:
             usuario = get_usuario(chat_id)
             if not usuario or not usuario["logado"]:

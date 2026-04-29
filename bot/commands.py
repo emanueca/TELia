@@ -52,6 +52,17 @@ _AI_MODEL_ALIASES = {
     "gemini-pro-latest": "gemini-pro-latest",
 }
 
+DEVELOPER_PROMPTS = [
+    "Olá, tudo bem?",
+    "Como você tem passado ultimamente?",
+    "O que você anda fazendo de bom hoje?",
+    "Tem novidade por aí? Conta!",
+    "Qual é a sua opinião sobre música brasileira?",
+    "Me indica um filme bacana pra assistir?",
+    "E aí, curtiu o fim de semana?",
+    "Tá entendendo como usar esse bot?",
+]
+
 
 def resolve_ai_model_choice(text: str) -> str | None:
     choice = (text or "").strip().lower()
@@ -62,6 +73,56 @@ def resolve_ai_model_choice(text: str) -> str | None:
     if choice in _AI_MODEL_ALIASES:
         return _AI_MODEL_ALIASES[choice]
     return None
+
+
+async def _block_if_anon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    """Retorna True e envia mensagem de bloqueio se o usuário estiver em modo anônimo."""
+    try:
+        # Permite explicitamente o comando /desenvolvedor mesmo em modo anônimo
+        try:
+            if update and getattr(update, "message", None) and isinstance(update.message.text, str):
+                if update.message.text.strip().lower().startswith("/desenvolvedor"):
+                    return False
+        except Exception:
+            pass
+
+        if context.user_data.get("status") == "anonimo":
+            msg = (
+                "MODO ANÔNIMO ATIVO 👤\n\n"
+                "Comandos de sistema estão desativados neste modo. Use /start para voltar ao menu inicial."
+            )
+            if update and getattr(update, "callback_query", None):
+                try:
+                    await update.callback_query.edit_message_text(msg)
+                except Exception:
+                    pass
+            else:
+                try:
+                    await update.message.reply_text(msg)
+                except Exception:
+                    pass
+            return True
+    except Exception:
+        pass
+    return False
+
+
+async def start_developer_mode(update: Update, context: ContextTypes.DEFAULT_TYPE, *, auto_message: str | None = None):
+    """Ativa o modo desenvolvedor com um primeiro prompt fixo e próximos prompts aleatórios."""
+    context.user_data["status"] = "anonimo"
+    context.user_data["awaiting"] = "dev_reply"
+    context.user_data["dev_prompts"] = list(DEVELOPER_PROMPTS)
+
+    if auto_message:
+        await update.message.reply_text(auto_message, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(
+            "Bem vindo ao modo desenvolvedor! Vou te enviar mensagens e tente replicar de forma informal "
+            "(pode ter gírias, erros de digitação mas nada fora do contexto!)."
+            "\n\nRespondendo, você ajuda no treinamento do modelo. Para sair, use /sair ou /start.",
+        )
+
+    await update.message.reply_text(DEVELOPER_PROMPTS[0])
 
 
 def _format_task_next_run(task: dict) -> str:
@@ -77,31 +138,72 @@ def _format_task_next_run(task: dict) -> str:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting", None)
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "Entrar como Anônimo 👤 (nenhuma informação vai ser salva e você terá acesso ao modo de treinamento para tirar pequenas dúvidas)",
+                callback_data="entrada_anonimo",
+            )
+        ],
+        [InlineKeyboardButton("Entrada Normal 💻", callback_data="agenda")],
+    ]
+
     await update.message.reply_text(
-        "Oi! Sou a *TELia*, sua assistente pessoal com IA.\n\n"
-        "*Menu inicial de comandos:*\n"
-        "/start — abre este menu inicial\n"
-        "/cadastrar — criar nova conta\n"
-        "/login — entrar na conta\n"
-        "/sair — encerrar sessão\n"
-        "/clean — apagar as mensagens visíveis deste chat\n"
-        "/reportar — relatar um problema\n"
-        "/lembretes — listar, apagar ou mudar lembretes\n"
-        "/ia — escolher o modelo de IA da sua conta\n"
-        "/timezone — definir seu fuso horário\n"
-        "/ajuda ou /help — ver explicações completas\n\n"
-        "Dica: depois do login, é só conversar normalmente comigo."
-        + MSG_GITHUB,
+        "Olá! Eu sou a *TELia*... Para começar a conversar crie uma conta ou entre como anônimo.",
         parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
+async def entrada_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data or ""
+
+    # Entrada normal: mostra o menu padrão (antes do botão)
+    if data == "agenda":
+        await query.edit_message_text(
+            "Oi! Sou a *TELia*, sua assistente pessoal com IA.\n\n"
+            "*Menu inicial de comandos:*\n"
+            "/start — abre este menu inicial\n"
+            "/cadastrar — criar nova conta\n"
+            "/login — entrar na conta\n"
+            "/sair — encerrar sessão\n"
+            "/clean — apagar as mensagens visíveis deste chat\n"
+            "/reportar — relatar um problema\n"
+            "/lembretes — listar, apagar ou mudar lembretes\n"
+            "/ia — escolher o modelo de IA da sua conta\n"
+            "/timezone — definir seu fuso horário\n"
+            "/ajuda ou /help — ver explicações completas\n\n"
+            "Dica: depois do login, é só conversar normalmente comigo." + MSG_GITHUB,
+            parse_mode="Markdown",
+        )
+        return
+
+    # Entrada anônima: ativa estado 'anonimo' no user_data e mostra o menu anônimo
+    if data == "entrada_anonimo":
+        context.user_data["status"] = "anonimo"
+        await query.edit_message_text(
+            "MODO ANÔNIMO ATIVO 👤\n\n"
+            "Você está no chat de conversas banais da TELia (anônimas que vão ser salvas para treinamento da IA)."
+            " Sinta-se à vontade para bater um papo, mas lembre-se que nenhuma informação pessoal sua será armazenada e esse modo contém MUITOS ERROS!!"
+            "\n\nOs comandos de sistema estão desativados, exceto /desenvolvedor. Use /start para voltar ao modo normal.\n\n"
+            "OBS: Se eu não responder em até 30 segundos, este modo será desativado automaticamente.",
+        )
+        return
+
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
     await ajuda(update, context)
 
 
 async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Primeira mensagem: explicação
+    if await _block_if_anon(update, context):
+        return
     await update.message.reply_text(
         "*🤖 Como a TELia funciona:*\n\n"
         "A TELia usa IA para entender suas mensagens, guardar contexto por usuário e responder de forma natural.\n\n"
@@ -178,6 +280,9 @@ async def ajuda(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     context.user_data["awaiting"] = "clean_confirm"
     prompt = await update.message.reply_text(
         "Você tem certeza?\n\n"
@@ -195,6 +300,8 @@ async def clean(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from database.queries import get_usuario
+    if await _block_if_anon(update, context):
+        return
 
     chat_id = update.effective_chat.id
     usuario = get_usuario(chat_id)
@@ -214,11 +321,17 @@ async def reportar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cadastrar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     context.user_data["awaiting"] = "cadastrar"
     await update.message.reply_text(_FORM_CADASTRAR + MSG_GITHUB)
 
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     from database.queries import get_usuario
 
     chat_id = update.effective_chat.id
@@ -238,6 +351,9 @@ async def login(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     from database.queries import get_usuario, get_profile
 
     chat_id = update.effective_chat.id
@@ -280,6 +396,9 @@ async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def lembretes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     from database.queries import get_usuario, get_active_reminder_tasks
 
     chat_id = update.effective_chat.id
@@ -319,6 +438,9 @@ async def lembretes(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     from database.queries import get_usuario, upsert_profile
 
     query = update.callback_query
@@ -360,6 +482,9 @@ async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def timezone_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     from database.queries import get_usuario, upsert_profile
 
     if context.user_data.get("awaiting") != "timezone_location":
@@ -414,6 +539,8 @@ async def timezone_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from database.queries import get_usuario
+    if await _block_if_anon(update, context):
+        return
 
     chat_id = update.effective_chat.id
     usuario = get_usuario(chat_id)
@@ -439,6 +566,9 @@ async def ia(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def modo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     keyboard = [
         [InlineKeyboardButton("🍽️ Reservar Almoço, IFFar-FW", callback_data="modo:reservar_almoco")],
         [InlineKeyboardButton("📊 Cálculo de Notas", callback_data="modo:calc_notas")],
@@ -451,7 +581,18 @@ async def modo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def desenvolvedor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ativa o modo desenvolvedor: envia mensagens automáticas para o usuário replicar informalmente.
+
+    O primeiro prompt é sempre o mesmo; prompts seguintes são sorteados.
+    """
+    await start_developer_mode(update, context)
+
+
 async def modo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     from database.queries import get_usuario, has_ru_credentials, get_ru_credentials
     from ru.credentials import decrypt
     from ru.booking import login_and_get_days
@@ -608,6 +749,9 @@ async def modo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if await _block_if_anon(update, context):
+        return
+
     context.user_data.pop("awaiting", None)
     context.user_data.pop("ru_cpf_tmp", None)
     context.user_data.pop("ru_user_id", None)
@@ -622,6 +766,23 @@ async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     usuario = get_usuario(chat_id)
+
+    if context.user_data.get("status") == "anonimo":
+        if context.user_data.get("awaiting") == "dev_reply":
+            context.user_data.pop("awaiting", None)
+            context.user_data.pop("dev_prompts", None)
+            await update.message.reply_text(
+                "Modo de treinamento encerrado. Você voltou para a conversa anônima normal.\n"
+                "Se o ChatBot continuar offline, eu posso reativar esse modo automaticamente na próxima mensagem."
+            )
+        else:
+            await update.message.reply_text(
+                "Você já está no modo anônimo. Use /desenvolvedor para treinar a IA ou /start para voltar ao menu inicial."
+            )
+        return
+
+    if await _block_if_anon(update, context):
+        return
 
     context.user_data.pop("awaiting", None)
     context.user_data.pop("report_draft", None)
