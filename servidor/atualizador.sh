@@ -1,5 +1,6 @@
 #!/bin/bash
-#
+#para rodar, entre: nano ~/.bashrc
+#no final da linha, alias commitauto='bash ~/TELia/servidor/atualizador.sh'
 clear
 echo "==========================================================="
 echo "🚀 TELia - SISTEMA DE DEPLOY AUTOMÁTICO"
