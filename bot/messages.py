@@ -391,7 +391,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Modo anônimo: encaminha a mensagem para a IA externa sem tocar no banco
         if context.user_data.get("status") == "anonimo":
-            from brain.chatterbot.api_ia import send_anonymous_to_brain
+            from ai.anon_client import send_anonymous_to_brain
 
             offline_text = (
                 "Parece que o ChatBot está desativado no momento. "
