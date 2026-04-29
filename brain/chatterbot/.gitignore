@@ -1,0 +1,3 @@
+venv_chatter/
+__pycache__/
+db.sqlite3
