@@ -114,16 +114,25 @@ async def start_developer_mode(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["awaiting"] = "dev_reply"
     context.user_data["dev_prompts"] = list(DEVELOPER_PROMPTS)
 
+    # Mensagem inicial sugerida para guiar o colaborador do treinamento
+    intro = (
+        "Você entrou no modo de treinamento! 🧠\n\n"
+        "Me ajude a ficar mais inteligente. Imagine que um usuário acabou de me mandar esta mensagem:\n"
+        "'Nossa, que dia cansativo hoje...'\n\n"
+        "Como você responderia a isso de forma natural e informal?\n\n"
+        "Responda com a mensagem que você usaria — pode ter gírias e tom casual.\n\n"
+        "Para sair, use /sair ou /start."
+    )
+
     if auto_message:
         await update.message.reply_text(auto_message, parse_mode="Markdown")
     else:
-        await update.message.reply_text(
-            "Bem vindo ao modo desenvolvedor! Vou te enviar mensagens e tente replicar de forma informal "
-            "(pode ter gírias, erros de digitação mas nada fora do contexto!)."
-            "\n\nRespondendo, você ajuda no treinamento do modelo. Para sair, use /sair ou /start.",
-        )
+        await update.message.reply_text(intro, parse_mode="Markdown")
 
-    await update.message.reply_text(DEVELOPER_PROMPTS[0])
+    # Envia o primeiro prompt e registra qual foi perguntado
+    first = DEVELOPER_PROMPTS[0]
+    context.user_data["dev_current_prompt"] = first
+    await update.message.reply_text(first)
 
 
 def _format_task_next_run(task: dict) -> str:

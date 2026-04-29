@@ -372,20 +372,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         usuario = None
         user_id = None
 
-        # Fluxo modo desenvolvedor: aceita respostas do usuário e envia próximo prompt
+        # Fluxo modo desenvolvedor: aceita respostas do usuário, grava em quarentena e envia próximo prompt
         if awaiting == "dev_reply":
             import random
+            from ai.treino_quarentena import salvar_treino_quarentena
 
             prompts = context.user_data.get("dev_prompts") or []
-            if not prompts:
+            current = context.user_data.get("dev_current_prompt") or (prompts[0] if prompts else None)
+            if not current:
                 context.user_data.pop("awaiting", None)
                 await update.message.reply_text("Modo desenvolvedor encerrado. Use /desenvolvedor para recomeçar.")
                 return
 
+            # Salva a resposta do usuário em quarentena para revisão manual posterior
+            try:
+                metadata = {
+                    "chat_id": update.effective_chat.id,
+                    "username": getattr(update.effective_user, "username", None),
+                }
+                salvar_treino_quarentena(current, text, metadata=metadata)
+            except Exception:
+                logger.exception("Falha ao salvar treino na quarentena.")
+
             candidates = prompts[1:] if len(prompts) > 1 else prompts
             next_prompt = random.choice(candidates) if candidates else prompts[0]
-            await update.message.reply_text(
-                "Boa! Agora tenta essa aqui:")
+            context.user_data["dev_current_prompt"] = next_prompt
+            await update.message.reply_text("Boa! Agora tenta essa aqui:")
             await update.message.reply_text(next_prompt)
             return
 

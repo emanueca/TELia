@@ -21,13 +21,25 @@ app = Flask(__name__)
 
 print("[*] Carregando os neuronios do ChatterBot...")
 # Inicializa o bot (vai criar um db.sqlite3 local na pasta)
-bot = ChatBot('TELia_Anon')
-
-print("[*] Iniciando o treinamento da TELia...")
+bot = ChatBot(
+    'TELia_Anon',
+    logic_adapters=[
+        {
+            'import_path': 'chatterbot.logic.BestMatch',
+            'default_response': (
+                'Ainda estou aprendendo e meu cérebro fritou! Pode me ensinar o que responder para isso usando o comando /desenvolvedor?'
+            ),
+            'maximum_similarity_threshold': 0.70,
+        }
+    ],
+)
 
 # 1. Treinamento de Português Básico (Corpus)
+# Nota: o corpus de português tende a poluir o banco com frases genéricas.
+# Se preferir, comente a linha abaixo (comentada por padrão) para evitar re-treinar
+# o corpus toda vez que o servidor reinicia.
 trainer_corpus = ChatterBotCorpusTrainer(bot)
-trainer_corpus.train('chatterbot.corpus.portuguese')
+# trainer_corpus.train('chatterbot.corpus.portuguese')
 
 # 2. Treinamento de Personalidade (Customizado)
 trainer_lista = ListTrainer(bot)
