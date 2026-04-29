@@ -78,10 +78,11 @@ def resolve_ai_model_choice(text: str) -> str | None:
 async def _block_if_anon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Retorna True e envia mensagem de bloqueio se o usuário estiver em modo anônimo."""
     try:
-        # Permite explicitamente o comando /desenvolvedor mesmo em modo anônimo
+        # /desenvolvedor só funciona no modo anônimo; os demais comandos de sistema ficam bloqueados.
         try:
             if update and getattr(update, "message", None) and isinstance(update.message.text, str):
-                if update.message.text.strip().lower().startswith("/desenvolvedor"):
+                command_text = update.message.text.strip().lower()
+                if command_text.startswith("/desenvolvedor"):
                     return False
         except Exception:
             pass
@@ -138,6 +139,9 @@ def _format_task_next_run(task: dict) -> str:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("awaiting", None)
+    context.user_data.pop("dev_prompts", None)
+    context.user_data.pop("report_draft", None)
+    context.user_data.pop("status", None)
     keyboard = [
         [
             InlineKeyboardButton(
@@ -586,6 +590,12 @@ async def desenvolvedor(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     O primeiro prompt é sempre o mesmo; prompts seguintes são sorteados.
     """
+    if context.user_data.get("status") != "anonimo":
+        await update.message.reply_text(
+            "O modo desenvolvedor só funciona no modo anônimo. Use /start e escolha a entrada anônima primeiro."
+        )
+        return
+
     await start_developer_mode(update, context)
 
 
@@ -768,17 +778,9 @@ async def sair(update: Update, context: ContextTypes.DEFAULT_TYPE):
     usuario = get_usuario(chat_id)
 
     if context.user_data.get("status") == "anonimo":
-        if context.user_data.get("awaiting") == "dev_reply":
-            context.user_data.pop("awaiting", None)
-            context.user_data.pop("dev_prompts", None)
-            await update.message.reply_text(
-                "Modo de treinamento encerrado. Você voltou para a conversa anônima normal.\n"
-                "Se o ChatBot continuar offline, eu posso reativar esse modo automaticamente na próxima mensagem."
-            )
-        else:
-            await update.message.reply_text(
-                "Você já está no modo anônimo. Use /desenvolvedor para treinar a IA ou /start para voltar ao menu inicial."
-            )
+        await update.message.reply_text(
+            "Esse comando não é usado no modo anônimo. Use /start para voltar ao menu inicial."
+        )
         return
 
     if await _block_if_anon(update, context):
