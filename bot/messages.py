@@ -392,41 +392,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Modo anônimo: encaminha a mensagem para a IA externa sem tocar no banco
         if context.user_data.get("status") == "anonimo":
             from brain.chatterbot.api_ia import send_anonymous_to_brain
-            from bot.commands import start_developer_mode
+
+            offline_text = (
+                "Parece que o ChatBot está desativado no momento. "
+                "Use /desenvolvedor para treinar a IA ou /start para voltar ao menu inicial."
+            )
 
             aguarde = await update.message.reply_text("✍️ Enviando ao modo anônimo...")
             _remember_chat_message(context, aguarde.message_id)
             try:
                 reply = await asyncio.wait_for(send_anonymous_to_brain(text), timeout=30)
             except asyncio.TimeoutError:
-                await start_developer_mode(
-                    update,
-                    context,
-                    auto_message=(
-                        "Parece que o ChatBot está desativado, mas treine a IA para quando ele estiver disponível usando /desenvolvedor ou /sair para uma conversa normal."
-                    ),
-                )
+                context.user_data.pop("awaiting", None)
+                await _safe_edit(aguarde, offline_text)
                 return
             except Exception:
-                await start_developer_mode(
-                    update,
-                    context,
-                    auto_message=(
-                        "Parece que o ChatBot está desativado, mas treine a IA para quando ele estiver disponível usando /desenvolvedor ou /sair para uma conversa normal."
-                    ),
-                )
+                context.user_data.pop("awaiting", None)
+                await _safe_edit(aguarde, offline_text)
                 return
 
             if not reply:
-                await start_developer_mode(
-                    update,
-                    context,
-                    auto_message=(
-                        "Parece que o ChatBot está desativado, mas treine a IA para quando ele estiver disponível usando /desenvolvedor ou /sair para uma conversa normal."
-                    ),
-                )
+                context.user_data.pop("awaiting", None)
+                await _safe_edit(aguarde, offline_text)
             else:
-                await update.message.reply_text(reply)
+                await _safe_edit(aguarde, reply)
             return
 
         if awaiting in {"edit_reminder_schedule", "ia_model", "report_issue", "report_name", "ru_cpf", "ru_senha", "ru_select_days", "ru_reservar_agora"}:
