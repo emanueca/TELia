@@ -78,14 +78,14 @@ def _format_lunch_queue(entries: list[dict]) -> str:
 
     lines = ["📋 *LISTÃO GERAL DE ALMOÇO*\n"]
     for index, entry in enumerate(entries, start=1):
-        mode_label = "Oferecedor" if entry.get("mode") == "offering" else "Recebedor"
+        mode_label = "Oferecedor" if entry.get("mode") == "offering" else "Pedinte"
         expires_at = entry.get("expires_at")
         if isinstance(expires_at, datetime):
             expires_text = expires_at.strftime("%d/%m %H:%M")
         else:
             expires_text = str(expires_at or "-")
         lines.append(
-            f"{index}. {mode_label} | CPF {entry.get('cpf', '-') } | Tempo {entry.get('time_window', '-')} | Expira {expires_text}"
+            f"{index}. {mode_label} | CPF {entry.get('cpf', '-') } | Expira: {expires_text}"
         )
     return "\n".join(lines)
 
@@ -229,6 +229,7 @@ async def lunch_send_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             parse_mode="Markdown",
         )
         context.user_data["lunch_flow"] = "send"
+        context.user_data["lunch_original_flow"] = "send"
         return
 
     # Se já tem credenciais, vai direto para escolher modo
@@ -275,7 +276,7 @@ async def lunch_send_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Verifica se já está no listão
     in_queue = user_in_lunch_queue(user_id)
     if in_queue:
-        role = "recebedor" if in_queue["mode"] == "seeking" else "oferecedor"
+        role = "pedinte" if in_queue["mode"] == "seeking" else "oferecedor"
         await query.edit_message_text(
             f"ℹ️ Você já está no listão como {role}.\n\n"
             "Digite /sair_listao para sair do listão. Ou utilize /consultar_listao para ver a lista geral!"
@@ -331,6 +332,7 @@ async def lunch_receive_start(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode="Markdown",
         )
         context.user_data["lunch_flow"] = "receive"
+        context.user_data["lunch_original_flow"] = "receive"
         return
 
     # Se já tem credenciais, vai para opções de recebimento
@@ -365,7 +367,7 @@ async def lunch_receive_queue(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Verifica se já está no listão
     in_queue = user_in_lunch_queue(user_id)
     if in_queue:
-        role = "recebedor" if in_queue["mode"] == "seeking" else "oferecedor"
+        role = "pedinte" if in_queue["mode"] == "seeking" else "oferecedor"
         await query.edit_message_text(
             f"ℹ️ Você já está no listão como {role}.\n\n"
             "Digite /sair_listao para sair do listão. Ou utilize /consultar_listao para ver a lista geral!"
@@ -631,13 +633,18 @@ async def handle_lunch_message(update: Update, context: ContextTypes.DEFAULT_TYP
             senha_enc = encrypt(senha)
             save_ru_credentials(user_id, cpf_enc, senha_enc)
 
+            context.user_data["lunch_ru_user_id"] = user_id
+            context.user_data["lunch_ru_cpf"] = cpf
+            context.user_data["lunch_ru_senha"] = senha
+
             await update.message.reply_text("✅ Login bem-sucedido!")
 
             # Volta para o fluxo anterior
-            original_flow = context.user_data.get("lunch_original_flow", "send")
+            original_flow = context.user_data.get("lunch_original_flow") or context.user_data.get("lunch_flow") or "send"
             context.user_data["lunch_flow"] = ""
+            context.user_data.pop("lunch_original_flow", None)
 
-            if original_flow == "send":
+            if original_flow.startswith("send"):
                 # Mostra opções de envio
                 # Cria uma query fake para usar a função existente
                 class FakeQuery:
