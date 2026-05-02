@@ -584,6 +584,7 @@ async def modo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("🍽️ Reservar Almoço, IFFar-FW", callback_data="modo:reservar_almoco")],
+        [InlineKeyboardButton("🍽️ Pedir/Enviar almoço RU", callback_data="modo:lunch_ru")],
         [InlineKeyboardButton("📊 Cálculo de Notas", callback_data="modo:calc_notas")],
         [InlineKeyboardButton("🤖 Testar IA", callback_data="modo:testar_ia")],
         [InlineKeyboardButton('📝 "Bloco de Notas"', callback_data="modo:bloco_notas")],
@@ -657,6 +658,21 @@ async def modo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "Ou envie /cancelar para sair.",
                 parse_mode="Markdown",
             )
+        return
+
+    if data == "modo:lunch_ru":
+        from bot.lunch_transfer import lunch_menu
+
+        chat_id = update.effective_chat.id
+        usuario = get_usuario(chat_id)
+        if not usuario or not usuario["logado"]:
+            await query.edit_message_text(
+                "👋 Para usar este modo, você precisa estar logado.\n"
+                "Use /login ou /cadastrar."
+            )
+            return
+
+        await lunch_menu(update, context)
         return
 
     if data == "modo:atualizar_creds":
@@ -761,6 +777,7 @@ async def modo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     labels = {
         "modo:calc_notas": "📊 Cálculo de Notas",
         "modo:testar_ia": "🤖 Testar IA",
+        "modo:lunch_ru": "🍽️ Pedir/Enviar almoço RU",
         "modo:bloco_notas": '📝 "Bloco de Notas"',
     }
     label = labels.get(data, "Este modo")

@@ -29,6 +29,23 @@ from ru.credentials import decrypt
 logger = logging.getLogger(__name__)
 
 
+def _load_ru_credentials(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Carrega e cacheia credenciais RU do usuário na sessão atual."""
+    creds = get_ru_credentials(user_id)
+    if not creds:
+        return None
+
+    try:
+        context.user_data["lunch_ru_user_id"] = user_id
+        context.user_data["lunch_ru_cpf"] = decrypt(creds["cpf_enc"])
+        context.user_data["lunch_ru_senha"] = decrypt(creds["senha_enc"])
+    except Exception:
+        logger.exception("Falha ao decodificar credenciais RU do usuário %s.", user_id)
+        return None
+
+    return creds
+
+
 async def _render_main_menu(target, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [
@@ -73,6 +90,8 @@ async def lunch_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             )
         return
 
+    _load_ru_credentials(context, user_id)
+
     if update.callback_query:
         await _render_main_menu(update.callback_query, context)
     else:
@@ -97,7 +116,7 @@ async def lunch_send_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     # Verifica se tem credenciais do RU
-    creds = get_ru_credentials(user_id)
+    creds = _load_ru_credentials(context, user_id)
 
     if not creds:
         # Pede login no RU
@@ -200,7 +219,7 @@ async def lunch_receive_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     # Verifica se tem credenciais do RU
-    creds = get_ru_credentials(user_id)
+    creds = _load_ru_credentials(context, user_id)
 
     if not creds:
         keyboard = [

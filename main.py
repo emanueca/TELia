@@ -91,7 +91,6 @@ def main():
     app.add_handler(CommandHandler("lembretes", lembretes))
     app.add_handler(CommandHandler("timezone", timezone_command))
     app.add_handler(CommandHandler("modo", modo))
-    app.add_handler(CommandHandler("transferir_almoco", transferir_almoco))
     app.add_handler(CommandHandler("cancelar", cancelar))
     
     # Callbacks para transferência de almoço
@@ -108,6 +107,7 @@ def main():
     app.add_handler(CallbackQueryHandler(timezone_callback, pattern=r"^timezone:"))
     app.add_handler(CallbackQueryHandler(entrada_callback, pattern=r"^(entrada_anonimo|agenda)$"))
     app.add_handler(CallbackQueryHandler(modo_callback, pattern=r"^modo:"))
+    app.add_handler(CallbackQueryHandler(transferir_almoco, pattern=r"^lunch:menu$"))
     app.add_handler(MessageHandler(filters.LOCATION, timezone_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
