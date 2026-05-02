@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 import time
+import logging
 from database.connection import get_connection
 
+logger = logging.getLogger(__name__)
 _schema_cache: dict[tuple[str, str], bool] = {}
 
 
@@ -633,4 +635,296 @@ def get_ru_credentials(user_id: int) -> dict | None:
 
 def has_ru_credentials(user_id: int) -> bool:
     return get_ru_credentials(user_id) is not None
+
+
+def save_ru_credentials(user_id: int, cpf_enc: str, senha_enc: str) -> bool:
+    """Salva ou atualiza credenciais do RU do usuário."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Tenta fazer update; se não afetar nada, faz insert
+        cursor.execute(
+            """
+            UPDATE ru_credentials
+            SET cpf_enc = %s, senha_enc = %s, updated_at = NOW()
+            WHERE user_id = %s
+            """,
+            (cpf_enc, senha_enc, user_id)
+        )
+        
+        if cursor.rowcount == 0:
+            # Não tinha registro, faz insert
+            cursor.execute(
+                """
+                INSERT INTO ru_credentials (user_id, cpf_enc, senha_enc)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, cpf_enc, senha_enc)
+            )
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao salvar credenciais do RU: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ── Sistema de Transferência de Almoço ──────────────────────────────────────
+
+def add_to_lunch_queue(user_id: int, mode: str, cpf: str, full_name: str | None, time_window: str) -> bool:
+    """
+    Adiciona usuário à fila de almoço (oferecendo ou buscando).
+    mode: 'offering' ou 'seeking'
+    time_window: '24h', '13h', '5h', '2h'
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Remove do listão se já existir para evitar duplicatas
+        cursor.execute("DELETE FROM lunch_queue WHERE user_id = %s", (user_id,))
+        
+        # Calcula tempo de expiração
+        from datetime import datetime, timedelta
+        time_map = {'24h': 24, '13h': 13, '5h': 5, '2h': 2}
+        hours = time_map.get(time_window, 24)
+        expires_at = datetime.now() + timedelta(hours=hours)
+        
+        cursor.execute(
+            """
+            INSERT INTO lunch_queue (user_id, mode, cpf, full_name, time_window, expires_at, active)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+            """,
+            (user_id, mode, cpf, full_name, time_window, expires_at)
+        )
+        conn.commit()
+        return True
+    except Exception as e:
+        logger.error(f"Erro ao adicionar ao listão: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def remove_from_lunch_queue(user_id: int) -> bool:
+    """Remove usuário da fila de almoço."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("UPDATE lunch_queue SET active = FALSE WHERE user_id = %s", (user_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Erro ao remover do listão: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_lunch_queue_entries(mode: str | None = None, active_only: bool = True) -> list[dict]:
+    """
+    Retorna entradas da fila de almoço.
+    mode: 'offering', 'seeking' ou None para ambas.
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        if mode:
+            cursor.execute(
+                """
+                SELECT id, user_id, mode, cpf, full_name, time_window, entered_at, expires_at
+                FROM lunch_queue
+                WHERE mode = %s AND active = %s
+                ORDER BY entered_at ASC
+                """,
+                (mode, active_only)
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id, user_id, mode, cpf, full_name, time_window, entered_at, expires_at
+                FROM lunch_queue
+                WHERE active = %s
+                ORDER BY entered_at ASC
+                """,
+                (active_only,)
+            )
+        return cursor.fetchall() or []
+    except Exception as e:
+        logger.error(f"Erro ao buscar fila de almoço: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def create_lunch_transfer(donor_id: int, recipient_id: int, donor_cpf: str, recipient_cpf: str, transfer_date) -> int | None:
+    """
+    Cria registro de transferência de almoço.
+    Retorna o ID da transferência ou None em caso de erro.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(
+            """
+            INSERT INTO lunch_transfers (donor_id, recipient_id, donor_cpf, recipient_cpf, transfer_date, status)
+            VALUES (%s, %s, %s, %s, %s, 'pending')
+            """,
+            (donor_id, recipient_id, donor_cpf, recipient_cpf, transfer_date)
+        )
+        conn.commit()
+        transfer_id = cursor.lastrowid
+        return transfer_id
+    except Exception as e:
+        logger.error(f"Erro ao criar transferência: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_transfer_status(transfer_id: int, status: str) -> bool:
+    """
+    Atualiza status de uma transferência.
+    status: 'pending', 'accepted', 'rejected', 'completed'
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        completed_at = None
+        if status in ('accepted', 'completed'):
+            from datetime import datetime
+            completed_at = datetime.now()
+        
+        cursor.execute(
+            """
+            UPDATE lunch_transfers
+            SET status = %s, updated_at = NOW(), completed_at = %s
+            WHERE id = %s
+            """,
+            (status, completed_at, transfer_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Erro ao atualizar status: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_pending_transfers_for_user(user_id: int, direction: str = 'received') -> list[dict]:
+    """
+    Busca transferências pendentes.
+    direction: 'received' (como receptor) ou 'sent' (como doador)
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        if direction == 'received':
+            cursor.execute(
+                """
+                SELECT id, donor_id, recipient_id, donor_cpf, recipient_cpf, 
+                       transfer_date, status, created_at
+                FROM lunch_transfers
+                WHERE recipient_id = %s AND status = 'pending'
+                ORDER BY created_at DESC
+                """,
+                (user_id,)
+            )
+        else:  # sent
+            cursor.execute(
+                """
+                SELECT id, donor_id, recipient_id, donor_cpf, recipient_cpf, 
+                       transfer_date, status, created_at
+                FROM lunch_transfers
+                WHERE donor_id = %s AND status = 'pending'
+                ORDER BY created_at DESC
+                """,
+                (user_id,)
+            )
+        return cursor.fetchall() or []
+    except Exception as e:
+        logger.error(f"Erro ao buscar transferências pendentes: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def user_in_lunch_queue(user_id: int) -> dict | None:
+    """Retorna entrada do usuário na fila se estiver lá, None caso contrário."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        cursor.execute(
+            """
+            SELECT id, mode, cpf, full_name, time_window, entered_at, expires_at
+            FROM lunch_queue
+            WHERE user_id = %s AND active = TRUE
+            """,
+            (user_id,)
+        )
+        return cursor.fetchone()
+    except Exception as e:
+        logger.error(f"Erro ao verificar se está no listão: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def find_matching_lunch_partner(seeker_id: int) -> dict | None:
+    """
+    Procura um parceiro na fila para fazer match.
+    Se seeker_id está buscando ('seeking'), procura alguém oferecendo ('offering').
+    """
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        # Primeiro verifica o modo do seeker
+        cursor.execute(
+            "SELECT mode FROM lunch_queue WHERE user_id = %s AND active = TRUE",
+            (seeker_id,)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        
+        seeker_mode = row['mode']
+        target_mode = 'offering' if seeker_mode == 'seeking' else 'seeking'
+        
+        # Procura o primeiro parceiro disponível com modo oposto
+        cursor.execute(
+            """
+            SELECT id, user_id, mode, cpf, full_name, time_window
+            FROM lunch_queue
+            WHERE mode = %s AND active = TRUE AND user_id != %s
+            ORDER BY entered_at ASC
+            LIMIT 1
+            """,
+            (target_mode, seeker_id)
+        )
+        return cursor.fetchone()
+    except Exception as e:
+        logger.error(f"Erro ao procurar parceiro: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
 

@@ -372,6 +372,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         usuario = None
         user_id = None
 
+        # Fluxo de transferência de almoço
+        lunch_flow = context.user_data.get("lunch_flow")
+        if lunch_flow:
+            from bot.lunch_transfer import handle_lunch_message
+            await handle_lunch_message(update, context)
+            return
+
         # Fluxo modo desenvolvedor: aceita respostas do usuário, grava em quarentena e envia próximo prompt
         if awaiting == "dev_reply":
             import random

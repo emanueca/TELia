@@ -309,3 +309,223 @@ async def book_days(cpf: str, senha: str, selected_values: list[str]) -> dict:
         await ctx.close()
         await browser.close()
         await pw.stop()
+
+
+# ── Transferência de Agendamento (Almoço) ──────────────────────────────────
+
+async def _load_transfer_page(page: Page) -> bool:
+    """
+    Navega para a página de transferência de agendamento.
+    Retorna True quando a página estiver carregada.
+    """
+    if "transferir_agendamento" not in page.url:
+        try:
+            await page.goto(f"{_RU_BASE}/sifw/app/transferir_agendamento.xhtml", timeout=25000, wait_until="load")
+        except Exception as e:
+            logger.warning("goto transferir_agendamento falhou: %s", e)
+            pass
+
+    # Espera a página carregar completamente
+    try:
+        await page.wait_for_selector("form, #form", timeout=15000)
+        return True
+    except Exception:
+        _dbg(await page.content(), "transfer_page_load_failed")
+        return False
+
+
+async def _extract_transferable_meals(page: Page) -> list[dict]:
+    """
+    Extrai os agendamentos transferíveis da página.
+    Retorna lista de objetos com data, tipo de refeição e status.
+    """
+    try:
+        # Aguarda a tabela de agendamentos ou lista de refeições carregar
+        await page.wait_for_selector("table, .ui-datatable, [role='grid']", timeout=10000)
+    except Exception:
+        logger.warning("Tabela de agendamentos não encontrada")
+        return []
+
+    meals = []
+    try:
+        # Tenta extrair dados da tabela usando JavaScript
+        meals = await page.evaluate("""
+            () => {
+                const rows = document.querySelectorAll('tr[role="row"], tbody tr');
+                const meals = [];
+                rows.forEach(row => {
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length >= 2) {
+                        const text = Array.from(cells).map(c => c.textContent.trim()).join(' | ');
+                        if (text && !text.includes('Nenhum') && !text.includes('vazio')) {
+                            meals.push({
+                                label: text,
+                                raw: text,
+                                type: 'transferable'
+                            });
+                        }
+                    }
+                });
+                return meals;
+            }
+        """)
+    except Exception as e:
+        logger.warning("Erro ao extrair refeições transferíveis: %s", e)
+
+    return meals
+
+
+async def _perform_transfer(page: Page, destination_cpf: str) -> tuple[bool, str]:
+    """
+    Realiza a transferência de almoço para um CPF de destino.
+    Retorna (success, message).
+    """
+    try:
+        # Procura o campo de entrada para CPF de destino
+        cpf_field = await page.query_selector("input[name*='destino'], input[name*='cpf'], input[name*='CPF']")
+        
+        if not cpf_field:
+            # Tenta por xpath ou placeholder
+            cpf_field = await page.query_selector("input[placeholder*='CPF'], input[placeholder*='cpf']")
+        
+        if not cpf_field:
+            return False, "Campo de CPF de destino não encontrado na página."
+
+        # Preenche o CPF de destino
+        await cpf_field.fill(destination_cpf)
+        await page.wait_for_timeout(500)
+
+        # Procura e clica no botão de transferir/confirmar
+        transfer_btn = await page.query_selector("button:has-text('Transferir'), button:has-text('Enviar'), button[type='submit']")
+        
+        if not transfer_btn:
+            return False, "Botão de transferência não encontrado."
+
+        await transfer_btn.click()
+
+        # Espera a confirmação/sucesso
+        try:
+            # Aguarda popup de confirmação ou mensagem de sucesso
+            await page.wait_for_selector(".ui-growl, .message, .alert", timeout=8000)
+            success_text = await page.evaluate("""
+                () => {
+                    const messages = document.querySelectorAll('.ui-growl-title, .message, .alert');
+                    return Array.from(messages).map(m => m.textContent).join(' ');
+                }
+            """)
+            
+            if "sucesso" in success_text.lower() or "transferida" in success_text.lower():
+                return True, "Almoço transferido com sucesso!"
+            elif "erro" in success_text.lower() or "falha" in success_text.lower():
+                return False, f"Erro na transferência: {success_text}"
+        except Exception:
+            pass
+
+        return True, "Transferência iniciada. Verifique sua conta para confirmar."
+
+    except Exception as e:
+        logger.exception("Erro ao realizar transferência: %s", e)
+        return False, f"Erro ao transferir: {str(e)}"
+
+
+async def get_transferable_meals(cpf: str, senha: str) -> dict:
+    """
+    Login e busca agendamentos de almoço transferíveis.
+    
+    Returns:
+        {
+            "success": bool,
+            "error": str|None,
+            "meals": list[dict] - agendamentos transferíveis,
+            "has_today_lunch": bool
+        }
+    """
+    pw, browser = await _launch_browser()
+    ctx = await browser.new_context(viewport={"width": 1024, "height": 768})
+    page = await ctx.new_page()
+    try:
+        ok, err = await _do_login(page, cpf, senha)
+        if not ok:
+            return {"success": False, "error": err, "meals": [], "has_today_lunch": False}
+
+        loaded = await _load_transfer_page(page)
+        if not loaded:
+            return {
+                "success": False,
+                "error": "Página de transferência não carregou. Tente novamente.",
+                "meals": [],
+                "has_today_lunch": False,
+            }
+
+        meals = await _extract_transferable_meals(page)
+        
+        # Verifica se tem almoço agendado para hoje
+        from datetime import date
+        today = str(date.today())
+        has_today_lunch = any(today in meal.get("raw", "") for meal in meals)
+
+        return {
+            "success": True,
+            "error": None,
+            "meals": meals,
+            "has_today_lunch": has_today_lunch,
+        }
+    except Exception as e:
+        logger.exception("Erro ao buscar almoços transferíveis.")
+        return {
+            "success": False,
+            "error": str(e),
+            "meals": [],
+            "has_today_lunch": False,
+        }
+    finally:
+        await ctx.close()
+        await browser.close()
+        await pw.stop()
+
+
+async def transfer_lunch(cpf: str, senha: str, destination_cpf: str) -> dict:
+    """
+    Login e realiza transferência de almoço para um CPF de destino.
+    
+    Returns:
+        {
+            "success": bool,
+            "message": str,
+            "error": str|None
+        }
+    """
+    pw, browser = await _launch_browser()
+    ctx = await browser.new_context(viewport={"width": 1024, "height": 768})
+    page = await ctx.new_page()
+    try:
+        ok, err = await _do_login(page, cpf, senha)
+        if not ok:
+            return {"success": False, "message": "", "error": err}
+
+        loaded = await _load_transfer_page(page)
+        if not loaded:
+            return {
+                "success": False,
+                "message": "",
+                "error": "Página de transferência não carregou.",
+            }
+
+        success, message = await _perform_transfer(page, destination_cpf)
+        
+        return {
+            "success": success,
+            "message": message,
+            "error": None if success else message,
+        }
+    except Exception as e:
+        logger.exception("Erro ao transferir almoço.")
+        return {
+            "success": False,
+            "message": "",
+            "error": str(e),
+        }
+    finally:
+        await ctx.close()
+        await browser.close()
+        await pw.stop()

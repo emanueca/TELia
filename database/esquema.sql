@@ -88,6 +88,59 @@ CREATE TABLE IF NOT EXISTS ru_credentials (
     FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE
 );
 
+-- ============================================================
+-- SISTEMA DE TRANSFERÊNCIA DE ALMOÇO
+-- ============================================================
+
+-- Fila/Listão de pessoas oferecendo ou buscando almoço
+CREATE TABLE IF NOT EXISTS lunch_queue (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    mode ENUM('offering', 'seeking') NOT NULL,
+    cpf VARCHAR(20) NOT NULL,
+    full_name VARCHAR(255),
+    time_window ENUM('24h', '13h', '5h', '2h') NOT NULL DEFAULT '24h',
+    entered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    active BOOLEAN DEFAULT TRUE,
+    FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+    INDEX idx_lunch_queue_mode_active (mode, active),
+    INDEX idx_lunch_queue_user (user_id)
+);
+
+-- Registro de transferências de almoço
+CREATE TABLE IF NOT EXISTS lunch_transfers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    donor_id BIGINT NOT NULL,
+    recipient_id BIGINT NOT NULL,
+    donor_cpf VARCHAR(20) NOT NULL,
+    recipient_cpf VARCHAR(20) NOT NULL,
+    transfer_date DATE NOT NULL,
+    status ENUM('pending', 'accepted', 'rejected', 'completed') DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    completed_at DATETIME NULL,
+    FOREIGN KEY (donor_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+    FOREIGN KEY (recipient_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+    INDEX idx_lunch_transfers_status (status),
+    INDEX idx_lunch_transfers_date (transfer_date),
+    INDEX idx_lunch_transfers_donor (donor_id),
+    INDEX idx_lunch_transfers_recipient (recipient_id)
+);
+
+-- Notificações de transferência enviadas no chat
+CREATE TABLE IF NOT EXISTS lunch_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    transfer_id INT NOT NULL,
+    message_text TEXT NOT NULL,
+    sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    read_at DATETIME NULL,
+    FOREIGN KEY (user_id) REFERENCES users(chat_id) ON DELETE CASCADE,
+    FOREIGN KEY (transfer_id) REFERENCES lunch_transfers(id) ON DELETE CASCADE,
+    INDEX idx_lunch_notifications_user (user_id)
+);
+
 -- Limpeza opcional de tabelas antigas, se ainda existirem no banco:
 -- SET FOREIGN_KEY_CHECKS=0;
 -- DROP TABLE IF EXISTS reminders;
