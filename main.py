@@ -33,6 +33,8 @@ from bot.commands import (
 )
 from bot.lunch_transfer import (
     transferir_almoco,
+    consultar_listao,
+    sair_listao,
     lunch_send_start,
     lunch_receive_start,
     lunch_send_direct,
@@ -42,6 +44,7 @@ from bot.lunch_transfer import (
     lunch_ru_login,
     lunch_cancel,
     lunch_receive_pending,
+    lunch_consult_callback,
 )
 from bot.messages import handle_message
 from scheduler.jobs import start_scheduler
@@ -67,7 +70,8 @@ async def _post_init(app):
             BotCommand("ia", "escolher modelo de IA"),
             BotCommand("timezone", "configurar fuso horário"),
             BotCommand("modo", "escolher um modo de uso"),
-            BotCommand("transferir_almoco", "transferir almoço do RU"),
+            BotCommand("consultar_listao", "ver a fila geral do almoço"),
+            BotCommand("sair_listao", "sair do listão do almoço"),
             BotCommand("desenvolvedor", "ativar treinamento informal"),
             BotCommand("ajuda", "ver ajuda completa"),
             BotCommand("help", "atalho para ajuda"),
@@ -91,6 +95,8 @@ def main():
     app.add_handler(CommandHandler("lembretes", lembretes))
     app.add_handler(CommandHandler("timezone", timezone_command))
     app.add_handler(CommandHandler("modo", modo))
+    app.add_handler(CommandHandler("consultar_listao", consultar_listao))
+    app.add_handler(CommandHandler("sair_listao", sair_listao))
     app.add_handler(CommandHandler("cancelar", cancelar))
     
     # Callbacks para transferência de almoço
@@ -103,11 +109,11 @@ def main():
     app.add_handler(CallbackQueryHandler(lunch_queue_time_callback, pattern=r"^lunch:(queue|receive_queue)_(24h|13h|5h|2h)$"))
     app.add_handler(CallbackQueryHandler(lunch_ru_login, pattern=r"^lunch:ru_login$"))
     app.add_handler(CallbackQueryHandler(lunch_cancel, pattern=r"^lunch:cancel$"))
+    app.add_handler(CallbackQueryHandler(lunch_consult_callback, pattern=r"^lunch:consult_listao$"))
     
     app.add_handler(CallbackQueryHandler(timezone_callback, pattern=r"^timezone:"))
     app.add_handler(CallbackQueryHandler(entrada_callback, pattern=r"^(entrada_anonimo|agenda)$"))
     app.add_handler(CallbackQueryHandler(modo_callback, pattern=r"^modo:"))
-    app.add_handler(CallbackQueryHandler(transferir_almoco, pattern=r"^lunch:menu$"))
     app.add_handler(MessageHandler(filters.LOCATION, timezone_location))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

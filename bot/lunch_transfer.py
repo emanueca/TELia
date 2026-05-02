@@ -4,6 +4,7 @@ Handlers para o sistema de transferência de almoço.
 
 import logging
 from datetime import date
+from datetime import datetime
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -46,12 +47,56 @@ def _load_ru_credentials(context: ContextTypes.DEFAULT_TYPE, user_id: int):
     return creds
 
 
+def _current_ru_credentials(context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """Retorna credenciais RU da sessão ou do banco, sem forçar nova digitação."""
+    cached_user_id = context.user_data.get("lunch_ru_user_id")
+    cached_cpf = context.user_data.get("lunch_ru_cpf")
+    cached_senha = context.user_data.get("lunch_ru_senha")
+    if cached_user_id == user_id and cached_cpf and cached_senha:
+        return {"cpf": cached_cpf, "senha": cached_senha}
+
+    creds = _load_ru_credentials(context, user_id)
+    if not creds:
+        return None
+    return {
+        "cpf": context.user_data.get("lunch_ru_cpf"),
+        "senha": context.user_data.get("lunch_ru_senha"),
+    }
+
+
+def _login_required_text() -> str:
+    return (
+        "🍽️ *Reserva Automática de Almoço — IFFar-FW*\n\n"
+        "Para usar este modo, você precisa estar logado.\n"
+        "Use /login ou /cadastrar."
+    )
+
+
+def _format_lunch_queue(entries: list[dict]) -> str:
+    if not entries:
+        return "📭 O listão está vazio no momento."
+
+    lines = ["📋 *LISTÃO GERAL DE ALMOÇO*\n"]
+    for index, entry in enumerate(entries, start=1):
+        mode_label = "Oferecedor" if entry.get("mode") == "offering" else "Recebedor"
+        expires_at = entry.get("expires_at")
+        if isinstance(expires_at, datetime):
+            expires_text = expires_at.strftime("%d/%m %H:%M")
+        else:
+            expires_text = str(expires_at or "-")
+        lines.append(
+            f"{index}. {mode_label} | CPF {entry.get('cpf', '-') } | Tempo {entry.get('time_window', '-')} | Expira {expires_text}"
+        )
+    return "\n".join(lines)
+
+
 async def _render_main_menu(target, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [
             InlineKeyboardButton("🍽️ Enviar Almoço", callback_data="lunch:send"),
             InlineKeyboardButton("📥 Receber Almoço", callback_data="lunch:receive"),
         ],
+        [InlineKeyboardButton("📋 Consultar listão", callback_data="lunch:consult_listao")],
         [InlineKeyboardButton("❌ Cancelar", callback_data="lunch:cancel")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -77,17 +122,11 @@ async def lunch_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     user_id = update.effective_user.id
     usuario = get_usuario(user_id)
 
-    if not usuario:
+    if not usuario or not usuario.get("logado"):
         if update.callback_query:
-            await update.callback_query.edit_message_text(
-                "❌ Você precisa estar logado para usar este comando.\n"
-                "Use /login para entrar na sua conta."
-            )
+            await update.callback_query.edit_message_text(_login_required_text())
         else:
-            await update.message.reply_text(
-                "❌ Você precisa estar logado para usar este comando.\n"
-                "Use /login para entrar na sua conta."
-            )
+            await update.message.reply_text(_login_required_text(), parse_mode="Markdown")
         return
 
     _load_ru_credentials(context, user_id)
@@ -102,6 +141,62 @@ async def transferir_almoco(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     """Comando direto mantido por compatibilidade."""
     await lunch_menu(update, context)
 
+async def lunch_consult_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Callback do botão Consultar listão."""
+    query = update.callback_query
+    await query.answer()
+    await consultar_listao(update, context)
+
+
+async def consultar_listao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Mostra o listão geral de almoço."""
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+    user_id = update.effective_user.id
+    usuario = get_usuario(user_id)
+    if not usuario or not usuario.get("logado"):
+        if query:
+            await query.edit_message_text(_login_required_text())
+        else:
+            await update.message.reply_text(_login_required_text(), parse_mode="Markdown")
+        return
+
+    entries = get_lunch_queue_entries(active_only=True)
+    text = _format_lunch_queue(entries)
+
+    if query:
+        await query.edit_message_text(text, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, parse_mode="Markdown")
+
+
+async def sair_listao(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Remove o usuário do listão."""
+    query = update.callback_query
+    if query:
+        await query.answer()
+
+    user_id = update.effective_user.id
+    usuario = get_usuario(user_id)
+    if not usuario or not usuario.get("logado"):
+        if query:
+            await query.edit_message_text(_login_required_text())
+        else:
+            await update.message.reply_text(_login_required_text(), parse_mode="Markdown")
+        return
+
+    if not remove_from_lunch_queue(user_id):
+        msg = "ℹ️ Você não está no listão no momento."
+    else:
+        msg = "✅ Você saiu do listão com sucesso."
+
+    if query:
+        await query.edit_message_text(msg)
+    else:
+        await update.message.reply_text(msg)
+
 
 async def lunch_send_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Inicia o fluxo de envio de almoço."""
@@ -111,12 +206,12 @@ async def lunch_send_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     user_id = update.effective_user.id
     usuario = get_usuario(user_id)
 
-    if not usuario:
-        await query.edit_message_text("❌ Usuário não encontrado.")
+    if not usuario or not usuario.get("logado"):
+        await query.edit_message_text(_login_required_text())
         return
 
     # Verifica se tem credenciais do RU
-    creds = _load_ru_credentials(context, user_id)
+    creds = _current_ru_credentials(context, user_id)
 
     if not creds:
         # Pede login no RU
@@ -127,7 +222,7 @@ async def lunch_send_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await query.edit_message_text(
-            "🔐 **LOGIN NO RU**\n\n"
+            _login_required_text() + "\n\n🔐 *Credenciais do RU não encontradas para este usuário.*\n\n"
             "Você precisa fazer login no RU para transferir almoço.\n"
             "Deseja continuar?",
             reply_markup=reply_markup,
@@ -180,10 +275,10 @@ async def lunch_send_queue(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Verifica se já está no listão
     in_queue = user_in_lunch_queue(user_id)
     if in_queue:
+        role = "recebedor" if in_queue["mode"] == "seeking" else "oferecedor"
         await query.edit_message_text(
-            "ℹ️ Você já está no listão como "
-            f"**{'oferecedor' if in_queue['mode'] == 'offering' else 'buscador'}**.\n\n"
-            "Digite /transferir_almoco para sair do listão."
+            f"ℹ️ Você já está no listão como {role}.\n\n"
+            "Digite /sair_listao para sair do listão. Ou utilize /consultar_listao para ver a lista geral!"
         )
         return
 
@@ -214,12 +309,12 @@ async def lunch_receive_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = update.effective_user.id
     usuario = get_usuario(user_id)
 
-    if not usuario:
-        await query.edit_message_text("❌ Usuário não encontrado.")
+    if not usuario or not usuario.get("logado"):
+        await query.edit_message_text(_login_required_text())
         return
 
     # Verifica se tem credenciais do RU
-    creds = _load_ru_credentials(context, user_id)
+    creds = _current_ru_credentials(context, user_id)
 
     if not creds:
         keyboard = [
@@ -229,7 +324,7 @@ async def lunch_receive_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await query.edit_message_text(
-            "🔐 **LOGIN NO RU**\n\n"
+            _login_required_text() + "\n\n🔐 *Credenciais do RU não encontradas para este usuário.*\n\n"
             "Você precisa fazer login no RU para receber almoço.\n"
             "Deseja continuar?",
             reply_markup=reply_markup,
@@ -270,10 +365,10 @@ async def lunch_receive_queue(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Verifica se já está no listão
     in_queue = user_in_lunch_queue(user_id)
     if in_queue:
+        role = "recebedor" if in_queue["mode"] == "seeking" else "oferecedor"
         await query.edit_message_text(
-            "ℹ️ Você já está no listão como "
-            f"**{'oferecedor' if in_queue['mode'] == 'offering' else 'buscador'}**.\n\n"
-            "Digite /transferir_almoco para sair do listão."
+            f"ℹ️ Você já está no listão como {role}.\n\n"
+            "Digite /sair_listao para sair do listão. Ou utilize /consultar_listao para ver a lista geral!"
         )
         return
 
@@ -306,14 +401,14 @@ async def lunch_queue_time_callback(update: Update, context: ContextTypes.DEFAUL
 
     user_id = update.effective_user.id
     usuario = get_usuario(user_id)
-    creds = get_ru_credentials(user_id)
+    creds = _current_ru_credentials(context, user_id)
 
     if not creds:
         await query.answer("❌ Credenciais não encontradas", show_alert=True)
         return
 
     # Descriptografa CPF
-    cpf = decrypt(creds["cpf_enc"])
+    cpf = creds["cpf"]
 
     # Determina modo (offering ou seeking)
     flow = context.user_data.get("lunch_flow", "")
@@ -526,7 +621,7 @@ async def handle_lunch_message(update: Update, context: ContextTypes.DEFAULT_TYP
             if not result["success"]:
                 await update.message.reply_text(
                     f"❌ Erro no login: {result['error']}\n"
-                    "Tente novamente digitando /transferir_almoco"
+                    "Tente novamente em /modo → Pedir/Enviar almoço RU"
                 )
                 context.user_data["lunch_flow"] = ""
                 return
@@ -574,15 +669,15 @@ async def handle_lunch_message(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         user_id = update.effective_user.id
-        creds = get_ru_credentials(user_id)
+        creds = _current_ru_credentials(context, user_id)
 
         if not creds:
             await update.message.reply_text("❌ Credenciais não encontradas.")
             context.user_data["lunch_flow"] = ""
             return
 
-        cpf = decrypt(creds["cpf_enc"])
-        senha = decrypt(creds["senha_enc"])
+        cpf = creds["cpf"]
+        senha = creds["senha"]
 
         # Tenta fazer a transferência
         await update.message.reply_text("⏳ Processando transferência... Aguarde.")
