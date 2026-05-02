@@ -49,6 +49,15 @@ def _load_ru_credentials(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 
 def _current_ru_credentials(context: ContextTypes.DEFAULT_TYPE, user_id: int):
     """Retorna credenciais RU da sessão ou do banco, sem forçar nova digitação."""
+    session_user_id = context.user_data.get("ru_user_id")
+    session_cpf = context.user_data.get("ru_cpf_dec")
+    session_senha = context.user_data.get("ru_senha_dec")
+    if session_user_id == user_id and session_cpf and session_senha:
+        context.user_data["lunch_ru_user_id"] = user_id
+        context.user_data["lunch_ru_cpf"] = session_cpf
+        context.user_data["lunch_ru_senha"] = session_senha
+        return {"cpf": session_cpf, "senha": session_senha}
+
     cached_user_id = context.user_data.get("lunch_ru_user_id")
     cached_cpf = context.user_data.get("lunch_ru_cpf")
     cached_senha = context.user_data.get("lunch_ru_senha")
@@ -633,6 +642,9 @@ async def handle_lunch_message(update: Update, context: ContextTypes.DEFAULT_TYP
             senha_enc = encrypt(senha)
             save_ru_credentials(user_id, cpf_enc, senha_enc)
 
+            context.user_data["ru_user_id"] = user_id
+            context.user_data["ru_cpf_dec"] = cpf
+            context.user_data["ru_senha_dec"] = senha
             context.user_data["lunch_ru_user_id"] = user_id
             context.user_data["lunch_ru_cpf"] = cpf
             context.user_data["lunch_ru_senha"] = senha
