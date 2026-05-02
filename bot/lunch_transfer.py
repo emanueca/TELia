@@ -29,18 +29,7 @@ from ru.credentials import decrypt
 logger = logging.getLogger(__name__)
 
 
-async def transferir_almoco(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando /transferir_almoco - Menu inicial de transferência."""
-    user_id = update.effective_user.id
-    usuario = get_usuario(user_id)
-
-    if not usuario:
-        await update.message.reply_text(
-            "❌ Você precisa estar logado para usar este comando.\n"
-            "Use /login para entrar na sua conta."
-        )
-        return
-
+async def _render_main_menu(target, context: ContextTypes.DEFAULT_TYPE) -> None:
     keyboard = [
         [
             InlineKeyboardButton("🍽️ Enviar Almoço", callback_data="lunch:send"),
@@ -50,12 +39,49 @@ async def transferir_almoco(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await update.message.reply_text(
-        "🍽️ **TRANSFERÊNCIA DE ALMOÇO**\n\n"
-        "O que deseja fazer?",
-        parse_mode="Markdown",
-        reply_markup=reply_markup,
-    )
+    if hasattr(target, "edit_message_text"):
+        await target.edit_message_text(
+            "🍽️ *PEDIR/ENVIAR ALMOÇO RU*\n\n"
+            "O que deseja fazer?",
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
+    else:
+        await target.reply_text(
+            "🍽️ *PEDIR/ENVIAR ALMOÇO RU*\n\n"
+            "O que deseja fazer?",
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+        )
+
+
+async def lunch_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Abre o menu de almoço, vindo do /modo ou de um comando direto."""
+    user_id = update.effective_user.id
+    usuario = get_usuario(user_id)
+
+    if not usuario:
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                "❌ Você precisa estar logado para usar este comando.\n"
+                "Use /login para entrar na sua conta."
+            )
+        else:
+            await update.message.reply_text(
+                "❌ Você precisa estar logado para usar este comando.\n"
+                "Use /login para entrar na sua conta."
+            )
+        return
+
+    if update.callback_query:
+        await _render_main_menu(update.callback_query, context)
+    else:
+        await _render_main_menu(update.message, context)
+
+
+async def transferir_almoco(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando direto mantido por compatibilidade."""
+    await lunch_menu(update, context)
 
 
 async def lunch_send_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

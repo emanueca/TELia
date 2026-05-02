@@ -147,3 +147,4 @@ CREATE TABLE IF NOT EXISTS lunch_notifications (
 -- DROP TABLE IF EXISTS lembretes;
 -- DROP TABLE IF EXISTS usuarios;
 -- SET FOREIGN_KEY_CHECKS=1;
+
